@@ -184,22 +184,14 @@ line_selection_ui <- function(id) {
                 ),
                 p("查看该试验已生成的田试记录（planting数据+88个性状）", class = "text-muted"),
 
-                fluidRow(
-                  column(4,
-                    div(class = "sidebar-panel",
-                      selectInput(ns("view_exp"), "选择试验", choices = NULL, width = "100%"),
-                      div(class = "button-group",
-                        actionButton(ns("btn_view_refresh"), "刷新", icon = icon("refresh"), class = "btn-info btn-sm"),
-                        downloadButton(ns("btn_view_download"), "下载", class = "btn-success btn-sm"),
-                        actionButton(ns("btn_view_delete"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
-                        downloadButton(ns("btn_view_download_all"), "下载全部", class = "btn-warning btn-sm")
-                      )
-                    )
-                  ),
-                  column(8,
-                    DT::dataTableOutput(ns("view_table"))
-                  )
-                )
+                selectInput(ns("view_exp"), "选择试验", choices = NULL, width = "100%"),
+                div(class = "button-group",
+                  actionButton(ns("btn_view_refresh"), "刷新", icon = icon("refresh"), class = "btn-info btn-sm"),
+                  downloadButton(ns("btn_view_download"), "下载", class = "btn-success btn-sm"),
+                  actionButton(ns("btn_view_delete"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
+                  downloadButton(ns("btn_view_download_all"), "下载全部", class = "btn-warning btn-sm")
+                ),
+                DT::dataTableOutput(ns("view_table"))
               )
             )
           )
