@@ -180,21 +180,41 @@ getFieldRecordCols <- function(type = c("population", "line_selection", "yield_t
 }
 
 # =============================================================================
-# 记录本模块：流程步骤条 + 子 Tab 联动# =============================================================================
+# 记录本模块：流程步骤条 + 子 Tab 联动
+# =============================================================================
 
-# 顶部流程导航（点击切换「上传 / 维护 / 生成」子 Tab）
-fb_workflow_steps_ui <- function(ns) {
+# 顶部流程导航（点击切换「上传 / 维护 / 生成」子 Tab；active_step 高亮当前步）
+fb_workflow_steps_ui <- function(ns, active_step = "upload") {
+  steps <- c("upload", "maintain", "generate")
+  if (!active_step %in% steps) active_step <- "upload"
+  link_cls <- function(step) {
+    if (identical(active_step, step)) "fb-step-link fb-step-active" else "fb-step-link"
+  }
   shiny::div(
     class = "fb-workflow-steps",
     role = "navigation",
     `aria-label` = "工作流程",
     shiny::span(class = "fb-workflow-label", shiny::icon("route"), " 流程"),
-    shiny::actionLink(ns("wf_upload"), "上传数据", icon = shiny::icon("upload"), class = "fb-step-link"),
+    shiny::actionLink(ns("wf_upload"), "上传数据", icon = shiny::icon("upload"), class = link_cls("upload")),
     shiny::tags$span(class = "fb-step-arrow", shiny::HTML("&#8594;")),
-    shiny::actionLink(ns("wf_maintain"), "维护记录", icon = shiny::icon("list-alt"), class = "fb-step-link"),
+    shiny::actionLink(ns("wf_maintain"), "维护记录", icon = shiny::icon("list-alt"), class = link_cls("maintain")),
     shiny::tags$span(class = "fb-step-arrow", shiny::HTML("&#8594;")),
-    shiny::actionLink(ns("wf_generate"), "生成记录本", icon = shiny::icon("cog"), class = "fb-step-link")
+    shiny::actionLink(ns("wf_generate"), "生成记录本", icon = shiny::icon("cog"), class = link_cls("generate"))
   )
+}
+
+# 根据 tabsetPanel 当前选中项刷新步骤条（须在模块 server 内调用）
+render_workflow_steps <- function(output, input, ns, tab_input_name) {
+  output$workflow_steps <- shiny::renderUI({
+    tab <- input[[tab_input_name]]
+    if (is.null(tab) || length(tab) < 1L) {
+      tab <- "upload"
+    } else {
+      tab <- as.character(tab)[1L]
+    }
+    if (!nzchar(tab) || !tab %in% c("upload", "maintain", "generate")) tab <- "upload"
+    fb_workflow_steps_ui(ns, active_step = tab)
+  })
 }
 
 # 将步骤链接绑定到模块内 tabsetPanel（selected 对应各 tabPanel 的 value）

@@ -8,6 +8,7 @@ yield_test_ui <- function(id) {
   ns <- NS(id)
 
   tagList(
+    uiOutput(ns("workflow_steps")),
     tabsetPanel(
       id = ns("yield_tabs"),
 
@@ -16,39 +17,51 @@ yield_test_ui <- function(id) {
         value = "upload",
         icon = icon("upload"),
 
-        wellPanel(
-          h4("上传产比材料清单"),
-          p("上传包含杂交组合的Excel文件（需包含ma母本、pa父本列）", class = "text-muted")
-        ),
-
-        fluidRow(
-          column(4,
-            div(class = "sidebar-panel",
-              textInput(ns("exp_name"), "试验名称", value = "", placeholder = "如: 2025宿州产比试验"),
-              fileInput(ns("file"), "选择Excel文件",
-                accept = c(".xlsx", ".xls"),
-                buttonLabel = "选择...",
-                placeholder = "未选择文件"
-              ),
-              selectInput(ns("sheet"), "选择工作表", choices = NULL),
-              div(class = "button-group",
-                actionButton(ns("btn_preview"), "预览", icon = icon("eye"), class = "btn-info"),
-                actionButton(ns("btn_save"), "保存", icon = icon("save"), class = "btn-primary")
-              ),
-
-              div(class = "status-box", id = ns("status"),
-                icon("info-circle"), " 请上传或选择文件..."
-              )
-            )
+        div(class = "tab-panel",
+          h3(class = "panel-title",
+            span(class = "icon", icon("upload")),
+            "上传产比材料清单"
           ),
+          p("上传包含杂交组合的 Excel 文件（需包含 ma 母本、pa 父本列）。", class = "text-muted fb-panel-intro"),
 
-          column(8,
-            wellPanel(
-              h4("数据预览"),
-              DT::dataTableOutput(ns("preview_table")),
-              hr(),
-              h4("数据统计"),
-              verbatimTextOutput(ns("stats"))
+          fluidRow(
+            column(4,
+              div(class = "sidebar-panel",
+                textInput(ns("exp_name"), "试验名称", value = "",
+                  placeholder = "如: 2025宿州产比试验", width = "100%"
+                ),
+                fileInput(ns("file"), "选择Excel文件",
+                  accept = c(".xlsx", ".xls"),
+                  buttonLabel = icon("folder-open"),
+                  placeholder = "未选择文件",
+                  width = "100%"
+                ),
+                selectInput(ns("sheet"), "选择工作表", choices = NULL, width = "100%"),
+                div(class = "button-group",
+                  actionButton(ns("btn_preview"), "预览", icon = icon("eye"), class = "btn-info"),
+                  actionButton(ns("btn_save"), "保存", icon = icon("save"), class = "btn-primary")
+                ),
+
+                div(class = "status-box", id = ns("status"),
+                  icon("info-circle"), " 请上传或选择文件..."
+                )
+              )
+            ),
+
+            column(8,
+              div(class = "card",
+                div(class = "card-header",
+                  icon("table"), " 数据预览"
+                ),
+                DT::dataTableOutput(ns("preview_table"))
+              ),
+
+              div(class = "card",
+                div(class = "card-header",
+                  icon("chart-bar"), " 数据统计"
+                ),
+                verbatimTextOutput(ns("stats"))
+              )
             )
           )
         )
@@ -64,6 +77,7 @@ yield_test_ui <- function(id) {
             span(class = "icon", icon("list-alt")),
             "产比试验记录"
           ),
+          p("查看、筛选已保存的试验记录；选中后可查看详情或删除。", class = "text-muted fb-panel-intro"),
 
           div(class = "card",
             div(class = "action-bar",
@@ -93,6 +107,7 @@ yield_test_ui <- function(id) {
             span(class = "icon", icon("cog")),
             "生成产比记录本"
           ),
+          p("选择试验并配置 planting 参数后生成 Excel 记录本。", class = "text-muted fb-panel-intro"),
 
           fluidRow(
             column(4,
@@ -190,9 +205,7 @@ yield_test_ui <- function(id) {
             )
           )
         )
-      ),
-
-      # === 4. 查看记录 ===
+      )
     )
   )
 }
@@ -200,6 +213,9 @@ yield_test_ui <- function(id) {
 yield_test_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+
+    bind_workflow_step_tabs(input, session, ns, "yield_tabs")
+    render_workflow_steps(output, input, ns, "yield_tabs")
 
     rv <- reactiveValues(
       raw_data = NULL,

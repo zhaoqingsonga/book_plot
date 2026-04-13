@@ -8,6 +8,7 @@ line_selection_ui <- function(id) {
   ns <- NS(id)
 
   tagList(
+    uiOutput(ns("workflow_steps")),
     tabsetPanel(
       id = ns("line_tabs"),
 
@@ -21,6 +22,7 @@ line_selection_ui <- function(id) {
             span(class = "icon", icon("upload")),
             "上传株行材料清单"
           ),
+          p("上传株行材料清单 Excel，选择工作表后预览并保存。", class = "text-muted fb-panel-intro"),
 
           fluidRow(
             column(4,
@@ -76,6 +78,7 @@ line_selection_ui <- function(id) {
             span(class = "icon", icon("list-alt")),
             "株行试验记录"
           ),
+          p("查看、筛选已保存的试验记录；选中后可查看详情或删除。", class = "text-muted fb-panel-intro"),
 
           div(class = "card",
             div(class = "action-bar",
@@ -105,6 +108,7 @@ line_selection_ui <- function(id) {
             span(class = "icon", icon("cog")),
             "生成株行记录本"
           ),
+          p("选择试验并配置 planting 参数后生成 Excel 记录本。", class = "text-muted fb-panel-intro"),
 
           fluidRow(
             column(4,
@@ -209,6 +213,9 @@ line_selection_ui <- function(id) {
 line_selection_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+
+    bind_workflow_step_tabs(input, session, ns, "line_tabs")
+    render_workflow_steps(output, input, ns, "line_tabs")
 
     rv <- reactiveValues(
       raw_data = NULL,
