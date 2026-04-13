@@ -291,6 +291,11 @@ hr.section {
   overflow-y: auto;
 }
 
+.fb-row-delete-btn {
+  padding: 2px 8px;
+  line-height: 1.2;
+}
+
 /* 主内容区内标题尺度，避免影响导航栏 */
 .tab-content h4 {
   color: #333;

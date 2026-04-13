@@ -178,3 +178,20 @@ getFieldRecordCols <- function(type = c("population", "line_selection", "yield_t
   )
   c(FIELD_RECORD_BASE_COLS, extra, FIELD_RECORD_TRAIT_COLS, "created_at")
 }
+
+# 试验记录列表每行删除按钮（用于维护页最右侧“操作”列）
+fb_record_list_delete_buttons <- function(experiment_ids, ns) {
+  input_id <- htmltools::htmlEscape(ns("delete_record_row"), attribute = TRUE)
+  vapply(as.character(experiment_ids), function(eid) {
+    eid_esc <- htmltools::htmlEscape(eid, attribute = TRUE)
+    sprintf(
+      paste0(
+        "<button type=\"button\" class=\"btn btn-danger btn-sm fb-row-delete-btn\" ",
+        "onclick=\"event.stopPropagation(); event.preventDefault(); ",
+        "Shiny.setInputValue('%s', {experiment_id:'%s', nonce:Date.now()}, {priority:'event'});\">",
+        "删除</button>"
+      ),
+      input_id, eid_esc
+    )
+  }, FUN.VALUE = character(1))
+}

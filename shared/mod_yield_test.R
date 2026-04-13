@@ -79,11 +79,6 @@ yield_test_ui <- function(id) {
           p("查看、筛选已保存的试验记录；选中后可查看详情或删除。", class = "text-muted fb-panel-intro"),
 
           div(class = "card",
-            div(class = "action-bar",
-              actionButton(ns("btn_refresh"), "刷新", icon = icon("refresh"), class = "btn-sm btn-info"),
-              actionButton(ns("btn_delete"), "删除", icon = icon("trash"), class = "btn-sm btn-danger"),
-              span(id = ns("selected_info"), class = "text-muted", "未选择记录")
-            ),
             DT::dataTableOutput(ns("record_list"))
           ),
 
@@ -209,6 +204,7 @@ yield_test_server <- function(id) {
       raw_data = NULL,
       records = NULL,
       selected_exp = NULL,
+      pending_delete_exp = NULL,
       materials = NULL,
       planted_data = NULL,
       output_data = NULL,
@@ -423,20 +419,18 @@ yield_test_server <- function(id) {
       rv$records <- listYieldTestRecords(db_path = db_path)
     })
 
-    observeEvent(input$btn_refresh, {
-      rv$records <- listYieldTestRecords(db_path = db_path)
-      showNotification("列表已刷新", type = "message")
-    })
-
     output$record_list <- DT::renderDataTable({
       req(rv$records)
 
       df <- rv$records
       df$has_generated <- ifelse(df$has_generated == 1, "已生成", "未生成")
       df$created_at <- substr(df$created_at, 1, 19)
+      df$操作 <- fb_record_list_delete_buttons(df$experiment_id, ns)
 
-      DT::datatable(df[, c("experiment_id", "experiment_name", "total_rows", "has_generated", "created_at")],
+      cols <- c("experiment_id", "experiment_name", "total_rows", "has_generated", "created_at", "操作")
+      DT::datatable(df[, cols],
         selection = "single",
+        escape = setdiff(cols, "操作"),
         options = list(pageLength = 10, dom = 'frtip'),
         class = "compact stripe hover"
       )
@@ -448,7 +442,6 @@ yield_test_server <- function(id) {
         exp_id <- rv$records$experiment_id[selected_row]
         rv$selected_exp <- exp_id
         rv$materials <- getYieldTestMaterials(exp_id, db_path = db_path)
-        shinyjs::html(ns("selected_info"), paste("已选择:", exp_id))
       }
     })
 
@@ -457,8 +450,9 @@ yield_test_server <- function(id) {
       rv$materials
     }, options = list(pageLength = 10, scrollX = TRUE))
 
-    observeEvent(input$btn_delete, {
-      req(rv$selected_exp)
+    observeEvent(input$delete_record_row, {
+      req(input$delete_record_row$experiment_id)
+      rv$pending_delete_exp <- as.character(input$delete_record_row$experiment_id)
       showModal(modalDialog(
         title = "确认删除",
         paste0("确定要删除该试验记录吗？此操作不可恢复。"),
@@ -473,18 +467,22 @@ yield_test_server <- function(id) {
     observeEvent(input$btn_confirm_delete_yes, {
       removeModal()
       tryCatch({
-        deleteYieldTestRecord(rv$selected_exp, db_path = db_path)
+        deleteYieldTestRecord(rv$pending_delete_exp, db_path = db_path)
         rv$records <- listYieldTestRecords(db_path = db_path)
-        rv$selected_exp <- NULL
-        rv$materials <- NULL
-        shinyjs::html(ns("selected_info"), "未选择记录")
+        if (identical(rv$selected_exp, rv$pending_delete_exp)) {
+          rv$selected_exp <- NULL
+          rv$materials <- NULL
+        }
+        rv$pending_delete_exp <- NULL
         showNotification("删除成功", type = "message")
       }, error = function(e) {
+        rv$pending_delete_exp <- NULL
         showNotification(paste("删除失败:", e$message), type = "error")
       })
     })
 
     observeEvent(input$btn_confirm_delete_no, {
+      rv$pending_delete_exp <- NULL
       removeModal()
     })
 
