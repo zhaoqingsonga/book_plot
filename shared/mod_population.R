@@ -8,7 +8,6 @@ population_ui <- function(id) {
   ns <- NS(id)
 
   tagList(
-    uiOutput(ns("workflow_steps")),
     tabsetPanel(
       id = ns("pop_tabs"),
 
@@ -211,9 +210,6 @@ population_ui <- function(id) {
 population_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
-
-    bind_workflow_step_tabs(input, session, ns, "pop_tabs")
-    render_workflow_steps(output, input, ns, "pop_tabs")
 
     rv <- reactiveValues(
       raw_data = NULL,

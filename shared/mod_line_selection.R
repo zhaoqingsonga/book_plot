@@ -8,7 +8,6 @@ line_selection_ui <- function(id) {
   ns <- NS(id)
 
   tagList(
-    uiOutput(ns("workflow_steps")),
     tabsetPanel(
       id = ns("line_tabs"),
 
@@ -205,9 +204,6 @@ line_selection_ui <- function(id) {
 line_selection_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
-
-    bind_workflow_step_tabs(input, session, ns, "line_tabs")
-    render_workflow_steps(output, input, ns, "line_tabs")
 
     rv <- reactiveValues(
       raw_data = NULL,

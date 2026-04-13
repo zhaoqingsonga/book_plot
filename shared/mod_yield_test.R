@@ -8,7 +8,6 @@ yield_test_ui <- function(id) {
   ns <- NS(id)
 
   tagList(
-    uiOutput(ns("workflow_steps")),
     tabsetPanel(
       id = ns("yield_tabs"),
 
@@ -205,9 +204,6 @@ yield_test_ui <- function(id) {
 yield_test_server <- function(id) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
-
-    bind_workflow_step_tabs(input, session, ns, "yield_tabs")
-    render_workflow_steps(output, input, ns, "yield_tabs")
 
     rv <- reactiveValues(
       raw_data = NULL,
