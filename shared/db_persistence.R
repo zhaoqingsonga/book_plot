@@ -981,6 +981,7 @@ deleteUnifiedRecord <- function(experiment_id, db_path = defaultDbPath()) {
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDb(con)
   DBI::dbExecute(con, "DELETE FROM unified_records WHERE experiment_id = ?", params = list(experiment_id))
+  DBI::dbExecute(con, "DELETE FROM unified_materials WHERE experiment_id = ?", params = list(experiment_id))
 }
 
 # ========== 性状调查表操作 ==========
@@ -1066,8 +1067,8 @@ syncToUnifiedTable <- function(db_path = defaultDbPath()) {
     )
     if (nrow(existing) == 0) {
       DBI::dbExecute(con,
-        "INSERT INTO unified_records (experiment_id, experiment_type, experiment_name, total_rows, has_generated, generated_at, created_at, updated_at)
-         VALUES (?, 'population', ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO unified_records (experiment_id, experiment_type, experiment_name, source_id, total_rows, has_generated, generated_at, location, created_at, updated_at)
+         VALUES (?, 'population', ?, NULL, ?, ?, ?, '', ?, ?)",
         params = list(rec$experiment_id, rec$experiment_name, rec$total_rows, rec$has_generated, rec$generated_at, rec$created_at, rec$updated_at)
       )
       synced <- synced + 1
@@ -1102,8 +1103,8 @@ syncToUnifiedTable <- function(db_path = defaultDbPath()) {
     )
     if (nrow(existing) == 0) {
       DBI::dbExecute(con,
-        "INSERT INTO unified_records (experiment_id, experiment_type, experiment_name, total_rows, has_generated, generated_at, created_at, updated_at)
-         VALUES (?, 'yield_test', ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO unified_records (experiment_id, experiment_type, experiment_name, source_id, total_rows, has_generated, generated_at, location, created_at, updated_at)
+         VALUES (?, 'yield_test', ?, NULL, ?, ?, ?, '', ?, ?)",
         params = list(rec$experiment_id, rec$experiment_name, rec$total_rows, rec$has_generated, rec$generated_at, rec$created_at, rec$updated_at)
       )
       synced <- synced + 1

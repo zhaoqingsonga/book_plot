@@ -518,3 +518,146 @@ hr {
     transform: rotate(360deg);
   }
 }
+
+/* ===== 试验列表（两级面板） ===== */
+.exp-list-container {
+  max-height: 600px;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+/* 隐藏实验列表点击输入框 */
+.exp-list-container input[type="text"] {
+  display: none !important;
+}
+
+.exp-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 8px;
+  margin: 15px 0 8px;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.exp-group-count {
+  margin-left: auto;
+  background: rgba(255,255,255,0.3);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.85em;
+}
+
+.exp-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.exp-item {
+  padding: 12px 15px;
+  background: white;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.exp-item:hover {
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  transform: translateX(5px);
+}
+
+.exp-item.selected {
+  border-color: #667eea;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.2);
+}
+
+.exp-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.exp-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.95em;
+}
+
+.exp-badge {
+  font-size: 0.75em;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: #e9ecef;
+  color: #666;
+}
+
+.exp-item-meta {
+  font-size: 0.8em;
+  color: #888;
+}
+
+.stats-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  margin-top: 10px;
+  border-top: 1px solid #dee2e6;
+}
+
+.stat-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 15px;
+  font-weight: 600;
+  font-size: 1.1em;
+}
+
+.stat-text {
+  color: #666;
+  font-size: 0.9em;
+}
+
+.summary-item {
+  padding: 10px 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 5px;
+}
+
+.summary-item h6 {
+  color: #667eea;
+  font-size: 0.8em;
+  margin: 0 0 5px;
+  text-transform: uppercase;
+}
+
+.summary-item p {
+  margin: 0;
+  font-weight: 600;
+  color: #333;
+}
+
+.empty-message {
+  text-align: center;
+  padding: 40px 20px;
+  color: #888;
+  font-size: 0.95em;
+}
+
+.empty-message i {
+  font-size: 2em;
+  margin-bottom: 10px;
+  display: block;
+  opacity: 0.5;
+}

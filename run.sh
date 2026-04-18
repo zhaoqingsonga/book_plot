@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # 端口
-PORT=3636
+PORT=3681
 
 # 显示信息
 echo "=========================================="

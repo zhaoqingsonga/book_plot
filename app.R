@@ -18,6 +18,7 @@ source("shared/helpers.R")
 source("shared/db_persistence.R")
 
 # 加载模块
+source("shared/mod_experiments.R")
 source("shared/mod_line_selection.R")
 source("shared/mod_population.R")
 source("shared/mod_yield_test.R")
@@ -41,41 +42,14 @@ ui <- navbarPage(
 
   header = tags$head(
     includeCSS("www/styles.css"),
-    tags$script(HTML("
-      Shiny.addCustomMessageHandler('auto_download_when_ready', function(message) {
-        if (!message || !message.id) {
-          return;
-        }
+    includeScript("www/custom-handlers.js")
+  ),
 
-        var attempts = 0;
-        var maxAttempts = message.maxAttempts || 40;
-        var intervalMs = message.intervalMs || 250;
-
-        var timer = window.setInterval(function() {
-          var el = document.getElementById(message.id);
-          if (!el) {
-            attempts += 1;
-          } else {
-            var href = el.getAttribute('href') || '';
-            var disabled = el.classList.contains('disabled') || el.getAttribute('aria-disabled') === 'true';
-
-            if (href && !disabled) {
-              window.clearInterval(timer);
-              el.click();
-              return;
-            }
-            attempts += 1;
-          }
-
-          if (attempts >= maxAttempts) {
-            window.clearInterval(timer);
-            if (window.Shiny && message.failInputId) {
-              window.Shiny.setInputValue(message.failInputId, Date.now(), { priority: 'event' });
-            }
-          }
-        }, intervalMs);
-      });
-    "))
+  # === 0. 试验管理 ===
+  tabPanel(
+    "试验管理",
+    icon = icon("flask"),
+    experiments_ui("exp_mod")
   ),
 
   # === 1. 群体记录本 ===
@@ -121,6 +95,7 @@ ui <- navbarPage(
 # === Server 定义 ===
 
 server <- function(input, output, session) {
+  experiments_server("exp_mod")
   population_server("pop_mod")
   line_selection_server("line_mod")
   yield_test_server("yield_mod")

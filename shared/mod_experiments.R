@@ -1,0 +1,568 @@
+# =============================================================================
+# 模块: 试验管理
+# 功能: 两级面板UI - 左侧试验列表 + 右侧田间记录明细
+# 数据源: population_field_records, line_selection_field_records, yield_test_field_records
+# =============================================================================
+
+experiments_ui <- function(id) {
+  ns <- NS(id)
+
+  tagList(
+    div(class = "tab-panel",
+      h3(class = "panel-title",
+        span(class = "icon", icon("flask")),
+        "田间记录管理"
+      ),
+      p("选择左侧试验查看田间记录明细，支持按类型筛选。", class = "text-muted fb-panel-intro"),
+
+      fluidRow(
+        # ========== 左侧: 试验列表 ==========
+        column(4,
+          div(class = "sidebar-panel",
+            h5(icon("list"), " 试验列表"),
+
+            # 年份筛选
+            selectInput(ns("filter_year"), "年份",
+              choices = c("全部" = ""),
+              selected = "", width = "100%"
+            ),
+
+            # 类型筛选
+            selectInput(ns("filter_type"), "记录类型",
+              choices = c("全部" = "", "群体" = "population", "株行" = "line_selection", "产比" = "yield_test"),
+              selected = "", width = "100%"
+            ),
+
+            # 隐藏的点击处理器
+            textInput(ns("experiment_list_click"), "", value = ""),
+            tags$script(HTML(sprintf("
+              $(document).on('click', '.exp-item', function() {
+                var expId = $(this).attr('data-exp-id');
+                if (expId && window.Shiny) {
+                  Shiny.setInputValue('%s', expId, {priority: 'event'});
+                }
+              });
+            ", ns("experiment_list_click")))),
+
+            # 搜索
+            textInput(ns("filter_search"), "搜索",
+              placeholder = "输入试验名称或ID...", width = "100%"
+            ),
+
+            # 统计信息
+            div(class = "stats-row",
+              span(class = "stat-badge", textOutput(ns("exp_count"))),
+              span(class = "stat-text", "个试验")
+            ),
+
+            # 刷新和重置按钮
+            div(class = "button-group mt-3",
+              actionButton(ns("btn_reset"), "重置", icon = icon("refresh"), class = "btn-outline-secondary btn-sm w-50"),
+              actionButton(ns("btn_refresh"), "刷新", icon = icon("sync"), class = "btn-primary btn-sm w-50")
+            )
+          ),
+
+          # 试验列表（按类型分组显示）
+          div(class = "exp-list-container",
+            uiOutput(ns("experiment_list_ui"))
+          )
+        ),
+
+        # ========== 右侧: 田间记录明细 ==========
+        column(8,
+          div(class = "card",
+            div(class = "card-header d-flex justify-content-between align-items-center",
+              div(
+                icon("file-alt"), " 田间记录明细 ",
+                span(class = "badge bg-info ms-2", textOutput(ns("record_count")))
+              ),
+              actionButton(ns("btn_delete_exp"), "删除", icon = icon("trash"),
+                          class = "btn btn-sm btn-danger", style = "display:none;")
+            ),
+            DT::dataTableOutput(ns("field_records_table"))
+          ),
+
+          # 试验信息摘要
+          div(class = "card mt-3",
+            div(class = "card-header",
+              icon("info-circle"), " 试验摘要"
+            ),
+            uiOutput(ns("exp_summary_ui"))
+          )
+        )
+      )
+    )
+  )
+}
+
+experiments_server <- function(id) {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+
+    normalize_field_records <- function(records) {
+      if (is.null(records) || nrow(records) == 0) {
+        return(records)
+      }
+
+      if (!"stage" %in% names(records) && "stageid" %in% names(records)) {
+        records$stage <- records$stageid
+      }
+
+      if (!"place" %in% names(records)) {
+        records$place <- NA_character_
+      }
+
+      records
+    }
+
+    # --- 反应式数据 ---
+    db_path <- reactive({ defaultDbPath() })
+    refresh_version <- reactiveVal(0)
+
+    # 类型映射
+    type_map <- c(
+      "population" = "群体",
+      "line_selection" = "株行",
+      "yield_test" = "产比"
+    )
+
+    source_table_map <- c(
+      "population" = "population_field_records",
+      "line_selection" = "line_selection_field_records",
+      "yield_test" = "yield_test_field_records"
+    )
+
+    record_table_map <- c(
+      "population" = "population_records",
+      "line_selection" = "line_selection_records",
+      "yield_test" = "yield_test_records"
+    )
+
+    extract_year <- function(x) {
+      if (is.null(x)) {
+        return(rep(NA_character_, 0))
+      }
+
+      x <- as.character(x)
+      year <- substr(x, 1, 4)
+      year[!grepl("^[0-9]{4}$", year)] <- NA_character_
+      year
+    }
+
+    load_experiments <- reactive({
+      req(refresh_version())
+      con <- connectDb(db_path())
+      on.exit(DBI::dbDisconnect(con), add = TRUE)
+      initDb(con)
+
+      type_val <- input$filter_type
+
+      # 确定要查询哪些类型
+      types <- if (is.null(type_val) || nzchar(type_val) == 0) {
+        c("population", "line_selection", "yield_test")
+      } else {
+        type_val
+      }
+
+      all_exps <- list()
+
+      for (t in types) {
+        rec_tbl <- record_table_map[t]
+        field_tbl <- source_table_map[t]
+
+        q <- sprintf(
+          "SELECT r.experiment_id, r.experiment_name, r.total_rows, r.has_generated,
+                  r.generated_at, r.created_at, r.experiment_id as fieldid,
+                  '%s' as experiment_type
+           FROM %s r
+           WHERE r.has_generated = 1",
+          t, rec_tbl
+        )
+        exps <- DBI::dbGetQuery(con, q)
+
+        if (nrow(exps) > 0) {
+          exps$year <- extract_year(dplyr::coalesce(exps$generated_at, exps$created_at))
+
+          for (i in seq_len(nrow(exps))) {
+            exp_id <- exps$experiment_id[i]
+            field_data <- DBI::dbGetQuery(con,
+              sprintf("SELECT fieldid FROM %s WHERE experiment_id = ? LIMIT 1", field_tbl),
+              params = list(exp_id)
+            )
+            if (nrow(field_data) > 0) {
+              exps$fieldid[i] <- field_data$fieldid[1]
+            }
+          }
+          all_exps[[t]] <- exps
+        }
+      }
+
+      if (length(all_exps) == 0) {
+        return(data.frame(
+          experiment_id = character(),
+          experiment_name = character(),
+          total_rows = numeric(),
+          experiment_type = character(),
+          fieldid = character(),
+          generated_at = character(),
+          created_at = character(),
+          year = character(),
+          stringsAsFactors = FALSE
+        ))
+      }
+
+      do.call(rbind, all_exps)
+    })
+
+    observeEvent(load_experiments(), {
+      all_years <- sort(unique(stats::na.omit(load_experiments()$year)), decreasing = TRUE)
+      selected_year <- isolate(input$filter_year)
+      selected_year <- if (!is.null(selected_year) && selected_year %in% all_years) selected_year else ""
+
+      updateSelectInput(
+        session,
+        "filter_year",
+        choices = c("全部" = "", stats::setNames(all_years, all_years)),
+        selected = selected_year
+      )
+    }, ignoreNULL = FALSE)
+
+    # --- 获取试验列表（带分组） ---
+    experiments_list <- reactive({
+      combined <- load_experiments()
+      year_val <- input$filter_year
+      search_val <- input$filter_search
+
+      if (!is.null(year_val) && nzchar(year_val)) {
+        combined <- combined[combined$year == year_val, , drop = FALSE]
+      }
+
+      # 搜索筛选
+      if (!is.null(search_val) && nzchar(search_val)) {
+        pattern <- tolower(search_val)
+        combined <- combined[
+          grepl(pattern, tolower(combined$experiment_id)) |
+          grepl(pattern, tolower(combined$experiment_name)),
+        ]
+      }
+
+      combined
+    })
+
+    # --- 当前选中的试验 ---
+    selected_experiment <- reactiveVal(NULL)
+
+    # --- 输出: 试验计数 ---
+    output$exp_count <- renderText({
+      nrow(experiments_list())
+    })
+
+    # --- 输出: 记录计数 ---
+    output$record_count <- renderText({
+      exp <- selected_experiment()
+      if (is.null(exp)) return("0")
+      nrow(exp$field_records %||% data.frame())
+    })
+
+    # --- 输出: 试验列表UI（分组） ---
+    output$experiment_list_ui <- renderUI({
+      exps <- experiments_list()
+
+      if (nrow(exps) == 0) {
+        return(div(class = "empty-message",
+          icon("inbox"), " 暂无试验记录"
+        ))
+      }
+
+      # 按类型分组
+      types_order <- c("population", "line_selection", "yield_test")
+      type_names <- type_map[types_order]
+
+      group_blocks <- lapply(types_order, function(t) {
+        group_exps <- exps[exps$experiment_type == t, ]
+        if (nrow(group_exps) == 0) return(NULL)
+
+        type_name <- type_map[t]
+
+        exp_items <- lapply(1:nrow(group_exps), function(i) {
+          row <- group_exps[i, ]
+          is_selected <- !is.null(selected_experiment()) &&
+                         selected_experiment()$experiment_id == row$experiment_id
+
+          btn_class <- if (is_selected) "exp-item selected" else "exp-item"
+
+          div(class = btn_class, `data-exp-id` = row$experiment_id,
+            div(class = "exp-item-header",
+              span(class = "exp-name", row$experiment_name),
+              span(class = "exp-badge", type_name)
+            ),
+            div(class = "exp-item-meta",
+              sprintf("ID: %s | 行数: %.0f", row$experiment_id, row$total_rows %||% 0)
+            )
+          )
+        })
+
+        tagList(
+          div(class = "exp-group-header",
+            icon(get_type_icon(t)), " ", type_name,
+            span(class = "exp-group-count", nrow(group_exps))
+          ),
+          div(class = "exp-group-items", exp_items)
+        )
+      })
+
+      tagList(group_blocks)
+    })
+
+    # --- 试验列表点击事件 ---
+    observeEvent(input$experiment_list_click, {
+      exp_id <- input$experiment_list_click
+      if (is.null(exp_id) || exp_id == "") return()
+
+      exps <- experiments_list()
+      exp_row <- exps[exps$experiment_id == exp_id, ]
+      if (nrow(exp_row) == 0) return()
+
+      # 加载田间记录明细
+      con <- connectDb(db_path())
+      on.exit(DBI::dbDisconnect(con), add = TRUE)
+      initDb(con)
+
+      field_tbl <- source_table_map[exp_row$experiment_type]
+      field_records <- DBI::dbGetQuery(con,
+        sprintf("SELECT * FROM %s WHERE experiment_id = ? ORDER BY rowid", field_tbl),
+        params = list(exp_id)
+      )
+      field_records <- normalize_field_records(field_records)
+
+      exp_data <- as.list(exp_row[1, , drop = FALSE])
+      exp_data$field_records <- field_records
+      selected_experiment(exp_data)
+
+      # 显示删除按钮
+      session$sendCustomMessage("toggle_delete_btn", list(show = TRUE))
+    })
+
+    # --- 输出: 田间记录表格 ---
+    output$field_records_table <- DT::renderDataTable({
+      exp <- selected_experiment()
+      if (is.null(exp) || is.null(exp$field_records) || nrow(exp$field_records) == 0) {
+        return(NULL)
+      }
+
+      records <- exp$field_records
+
+      # 选择显示列
+      display_cols <- c("fieldid", "experiment_id", "experiment_name", "place", "stage",
+                       "rows", "code", "sele", "f", "rp", "created_at")
+      display_cols <- display_cols[display_cols %in% names(records)]
+      display_df <- records[, display_cols, drop = FALSE]
+
+      # 列名中文
+      col_names <- c(
+        "fieldid" = "田试ID",
+        "experiment_id" = "试验ID",
+        "experiment_name" = "试验名称",
+        "place" = "地点",
+        "stage" = "阶段",
+        "rows" = "行数",
+        "code" = "编号",
+        "sele" = "选择",
+        "f" = "F值",
+        "rp" = "重复",
+        "created_at" = "创建时间"
+      )
+      safe_names <- unname(col_names[colnames(display_df)])
+      safe_names[is.na(safe_names)] <- colnames(display_df)[is.na(safe_names)]
+      colnames(display_df) <- safe_names
+
+      # 格式化时间
+      if ("创建时间" %in% names(display_df)) {
+        display_df$创建时间 <- format(as.POSIXct(display_df$创建时间), "%Y-%m-%d %H:%M")
+      }
+
+      DT::datatable(
+        display_df,
+        rownames = FALSE,
+        escape = FALSE,
+        options = list(
+          pageLength = 15,
+          lengthMenu = c(10, 15, 30, 50),
+          order = list(list(length(display_cols) - 1, "desc")),
+          columnDefs = list(
+            list(className = "dt-center", targets = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9))
+          )
+        )
+      )
+    })
+
+    # --- 输出: 试验摘要 ---
+    output$exp_summary_ui <- renderUI({
+      exp <- selected_experiment()
+      if (is.null(exp)) {
+        return(div(class = "empty-message",
+          icon("hand-point-right"), " 请从左侧选择试验查看详情"
+        ))
+      }
+
+      type_name <- type_map[exp$experiment_type]
+      records <- exp$field_records %||% data.frame()
+
+      tagList(
+        fluidRow(
+          column(3,
+            div(class = "summary-item",
+              h6("试验名称"),
+              p(exp$experiment_name %||% "-")
+            )
+          ),
+          column(3,
+            div(class = "summary-item",
+              h6("试验类型"),
+              p(type_name)
+            )
+          ),
+          column(3,
+            div(class = "summary-item",
+              h6("试验ID"),
+              p(exp$experiment_id %||% "-")
+            )
+          ),
+          column(3,
+            div(class = "summary-item",
+              h6("总行数"),
+              p(format(nrow(records), big.mark = ","))
+            )
+          )
+        ),
+        if (nrow(records) > 0) {
+          fluidRow(
+            column(4,
+              div(class = "summary-item",
+                h6("地点"),
+                p(unique(records$place) %>% na.omit() %>% paste(collapse = ", ") %||% "-")
+              )
+            ),
+            column(4,
+              div(class = "summary-item",
+                h6("阶段"),
+                p(unique(records$stage) %>% na.omit() %>% paste(collapse = ", ") %||% "-")
+              )
+            ),
+            column(4,
+              div(class = "summary-item",
+                h6("创建时间"),
+                p(format(as.POSIXct(exp$generated_at), "%Y-%m-%d %H:%M") %||% "-")
+              )
+            )
+          )
+        }
+      )
+    })
+
+    # --- 删除按钮点击 ---
+    observeEvent(input$btn_delete_exp, {
+      exp <- selected_experiment()
+      if (is.null(exp) || is.null(exp$experiment_id)) return()
+
+      showModal(modalDialog(
+        title = tagList(icon("exclamation-triangle"), "确认删除"),
+        p("删除田间记录将同时删除所有关联的性状数据，此操作不可恢复。"),
+        strong(sprintf("%s (%s)", exp$experiment_name, exp$experiment_id),
+               class = "text-danger"),
+        p("是否确定删除？", class = "text-muted"),
+        easyClose = FALSE,
+        footer = tagList(
+          modalButton("取消"),
+          actionButton(ns("btn_confirm_delete"), "确认删除",
+                      icon = icon("trash"), class = "btn-danger")
+        )
+      ))
+    })
+
+    # --- 确认删除 ---
+    observeEvent(input$btn_confirm_delete, {
+      exp <- selected_experiment()
+      if (!is.null(exp) && !is.null(exp$experiment_id)) {
+        tryCatch({
+          con <- connectDb(db_path())
+          on.exit(DBI::dbDisconnect(con), add = TRUE)
+          initDb(con)
+
+          exp_id <- exp$experiment_id
+          field_tbl <- source_table_map[exp$experiment_type]
+
+          # 删除田间记录
+          DBI::dbExecute(con,
+            sprintf("DELETE FROM %s WHERE experiment_id = ?", field_tbl),
+            params = list(exp_id)
+          )
+
+          # 更新记录状态
+          rec_tbl <- record_table_map[exp$experiment_type]
+          DBI::dbExecute(con,
+            sprintf("UPDATE %s SET has_generated = 0 WHERE experiment_id = ?", rec_tbl),
+            params = list(exp_id)
+          )
+
+          # 删除关联性状数据
+          DBI::dbExecute(con,
+            "DELETE FROM traits_survey WHERE experiment_id = ?",
+            params = list(exp_id)
+          )
+
+          showNotification("删除成功", type = "message")
+          selected_experiment(NULL)
+          session$sendCustomMessage("toggle_delete_btn", list(show = FALSE))
+          refresh_version(refresh_version() + 1)
+
+        }, error = function(e) {
+          showNotification(paste("删除失败:", e$message), type = "error")
+        })
+      }
+      removeModal()
+    })
+
+    # --- 刷新 ---
+    observeEvent(input$btn_refresh, {
+      refresh_version(refresh_version() + 1)
+      showNotification("已刷新", type = "message", duration = 1)
+    })
+
+    # --- 重置 ---
+    observeEvent(input$btn_reset, {
+      updateSelectInput(session, "filter_year", selected = "")
+      updateSelectInput(session, "filter_type", selected = "")
+      updateTextInput(session, "filter_search", value = "")
+      selected_experiment(NULL)
+      session$sendCustomMessage("toggle_delete_btn", list(show = FALSE))
+      refresh_version(refresh_version() + 1)
+    })
+
+    # --- 初始化 ---
+    observe({
+      refresh_version(1)
+    })
+
+    # --- 返回刷新和重置按钮ID（供外部调用）---
+    list(
+      btn_refresh = reactive(input$btn_refresh),
+      btn_reset = reactive(input$btn_reset)
+    )
+  })
+}
+
+# 辅助函数：获取类型图标
+get_type_icon <- function(type) {
+  switch(type,
+    "population" = "users",
+    "line_selection" = "th-list",
+    "yield_test" = "chart-bar",
+    "file"
+  )
+}
+
+# 辅助函数：空值替换
+`%||%` <- function(x, y) {
+  if (is.null(x) || length(x) == 0) y else x
+}
