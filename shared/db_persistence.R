@@ -1113,3 +1113,212 @@ syncToUnifiedTable <- function(db_path = defaultDbPath()) {
 
   list(synced_count = synced, message = paste("已同步", synced, "条记录到广表"))
 }
+
+# =============================================================================
+# Designplot 种植试验相关表和导入功能
+# 从试验管理导入：读取已有试验的 planting 数据，转换为 designplot 格式
+# =============================================================================
+
+# ---- Designplot 表初始化 ----
+initDesignplotTables <- function(con) {
+  # designplot 专用试验表
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS designplot_experiments (
+      experiment_id TEXT PRIMARY KEY,
+      experiment_name TEXT NOT NULL,
+      source_type TEXT CHECK(source_type IN ('population', 'line_selection', 'yield_test')),
+      source_id TEXT,
+      total_rows REAL DEFAULT 0,
+      has_planted INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  ")
+
+  # designplot 专用试验记录表（与 designplot2026 兼容）
+  DBI::dbExecute(con, "
+    CREATE TABLE IF NOT EXISTS designplot_experiment_records (
+      record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      experiment_id TEXT NOT NULL,
+      fieldid TEXT,
+      id TEXT,
+      stageid TEXT,
+      name TEXT,
+      former_stageid TEXT,
+      source TEXT,
+      code TEXT,
+      rp TEXT,
+      rows REAL,
+      line_number TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(experiment_id) REFERENCES designplot_experiments(experiment_id) ON DELETE CASCADE
+    )
+  ")
+
+  # 索引
+  DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dp_exp_id ON designplot_experiment_records(experiment_id)")
+  DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dp_exp_name ON designplot_experiments(experiment_name)")
+}
+
+# ---- 从试验管理导入单个试验 ----
+importExperimentToDesignplot <- function(source_experiment_id, source_type = c("population", "line_selection", "yield_test"),
+                                        db_path = defaultDbPath()) {
+  source_type <- match.arg(source_type)
+  con <- connectDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDb(con)
+  initDesignplotTables(con)
+
+  field_table <- switch(source_type,
+    population = "population_field_records",
+    line_selection = "line_selection_field_records",
+    yield_test = "yield_test_field_records"
+  )
+
+  records <- DBI::dbGetQuery(con,
+    sprintf("SELECT * FROM %s WHERE experiment_id = ? ORDER BY rowid", field_table),
+    params = list(source_experiment_id)
+  )
+
+  if (nrow(records) == 0) {
+    return(list(success = FALSE, message = "该试验没有田试记录，请先在对应模块生成记录本"))
+  }
+
+  now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  new_exp_id <- paste0("DP_", source_experiment_id)
+
+  exp_name_query <- switch(source_type,
+    population = "SELECT experiment_name FROM population_records WHERE experiment_id = ?",
+    line_selection = "SELECT experiment_name FROM line_selection_records WHERE experiment_id = ?",
+    yield_test = "SELECT experiment_name FROM yield_test_records WHERE experiment_id = ?"
+  )
+  exp_name_result <- DBI::dbGetQuery(con, exp_name_query, params = list(source_experiment_id))
+  exp_name <- if (nrow(exp_name_result) > 0) exp_name_result$experiment_name[1] else source_experiment_id
+
+  total_rows <- if ("rows" %in% names(records)) sum(as.numeric(records$rows), na.rm = TRUE) else nrow(records)
+
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con,
+      "INSERT OR REPLACE INTO designplot_experiments (experiment_id, experiment_name, source_type, source_id, total_rows, has_planted, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+      params = list(new_exp_id, exp_name, source_type, source_experiment_id, total_rows, now, now)
+    )
+
+    DBI::dbExecute(con, "DELETE FROM designplot_experiment_records WHERE experiment_id = ?", params = list(new_exp_id))
+
+    dp_records <- records[, c("fieldid", "id", "stageid", "name", "source", "code", "rp", "rows", "line_number"), drop = FALSE]
+    dp_records$experiment_id <- new_exp_id
+    dp_records$created_at <- now
+
+    for (col in names(dp_records)) {
+      if (is.character(dp_records[[col]]) || is.factor(dp_records[[col]])) {
+        dp_records[[col]] <- as.character(dp_records[[col]])
+        dp_records[[col]][is.na(dp_records[[col]])] <- ""
+      }
+    }
+
+    DBI::dbWriteTable(con, "designplot_experiment_records", dp_records, append = TRUE)
+  })
+
+  list(
+    success = TRUE,
+    experiment_id = new_exp_id,
+    experiment_name = exp_name,
+    source_type = source_type,
+    record_count = nrow(records),
+    total_rows = total_rows,
+    message = sprintf("导入成功：%s（%s），%d 条记录", exp_name, source_type, nrow(records))
+  )
+}
+
+# ---- 从试验管理导入全部试验 ----
+importAllExperimentsToDesignplot <- function(db_path = defaultDbPath()) {
+  con <- connectDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDb(con)
+  initDesignplotTables(con)
+
+  results <- list()
+
+  for (source_type in c("population", "line_selection", "yield_test")) {
+    records_table <- switch(source_type,
+      population = "population_records",
+      line_selection = "line_selection_records",
+      yield_test = "yield_test_records"
+    )
+
+    experiments <- DBI::dbGetQuery(con,
+      sprintf("SELECT experiment_id FROM %s WHERE has_generated = 1", records_table)
+    )
+
+    for (exp_id in experiments$experiment_id) {
+      result <- importExperimentToDesignplot(exp_id, source_type, db_path)
+      results[[length(results) + 1]] <- result
+    }
+  }
+
+  success_count <- sum(sapply(results, function(r) r$success))
+  list(
+    total_imported = success_count,
+    results = results,
+    message = sprintf("共成功导入 %d 个试验", success_count)
+  )
+}
+
+# ---- 获取 Designplot 试验列表 ----
+listDesignplotExperiments <- function(db_path = defaultDbPath()) {
+  con <- connectDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDb(con)
+  initDesignplotTables(con)
+
+  experiments <- DBI::dbGetQuery(con,
+    "SELECT experiment_id, experiment_name, source_type, source_id, total_rows, has_planted, created_at
+     FROM designplot_experiments ORDER BY created_at DESC"
+  )
+
+  if (!is.data.frame(experiments) || nrow(experiments) == 0) {
+    return(data.frame(
+      experiment_id = character(),
+      experiment_name = character(),
+      source_type = character(),
+      source_id = character(),
+      total_rows = numeric(),
+      has_planted = integer(),
+      created_at = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+
+  experiments
+}
+
+# ---- 获取 Designplot 试验记录 ----
+getDesignplotExperimentRecords <- function(experiment_id, db_path = defaultDbPath()) {
+  con <- connectDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDb(con)
+  initDesignplotTables(con)
+
+  records <- DBI::dbGetQuery(con,
+    "SELECT * FROM designplot_experiment_records WHERE experiment_id = ? ORDER BY record_id",
+    params = list(experiment_id)
+  )
+
+  records
+}
+
+# ---- 删除 Designplot 试验 ----
+deleteDesignplotExperiment <- function(experiment_id, db_path = defaultDbPath()) {
+  con <- connectDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDb(con)
+  initDesignplotTables(con)
+
+  deleted <- DBI::dbExecute(con,
+    "DELETE FROM designplot_experiments WHERE experiment_id = ?",
+    params = list(experiment_id)
+  )
+
+  invisible(deleted)
+}

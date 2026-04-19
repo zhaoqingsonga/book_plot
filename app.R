@@ -12,6 +12,7 @@ library(DT)
 library(dplyr)
 library(openxlsx)
 library(soyplant)
+library(ggplot2)
 
 # 加载辅助函数
 source("shared/helpers.R")
@@ -22,6 +23,14 @@ source("shared/mod_experiments.R")
 source("shared/mod_line_selection.R")
 source("shared/mod_population.R")
 source("shared/mod_yield_test.R")
+
+# 加载designplot模块
+source("shared/designplot/constants.R")
+source("shared/designplot/sqlite_persistence.R")
+source("shared/designplot/parsers.R")
+source("shared/designplot/core_design.R")
+source("shared/designplot/app_ui.R", local = TRUE)
+source("shared/designplot/app_server.R", local = TRUE)
 
 # Bootstrap 5 主题（主色、圆角、字体与自定义样式中的 var(--bs-*) 对齐）
 fb_theme <- bs_theme(
@@ -70,6 +79,13 @@ ui <- navbarPage(
     experiments_ui("exp_mod")
   ),
 
+  # === 5. 田间种植 ===
+  tabPanel(
+    "🌱 田间种植",
+    icon = icon("seedling"),
+    buildDesignplotUI()
+  ),
+
   # === 关于 ===
   tabPanel("关于",
     icon = icon("info-circle"),
@@ -99,6 +115,7 @@ server <- function(input, output, session) {
   population_server("pop_mod")
   line_selection_server("line_mod")
   yield_test_server("yield_mod")
+  buildDesignplotServer(input, output)
 }
 
 # === 启动应用 ===

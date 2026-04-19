@@ -59,7 +59,14 @@ experiments_ui <- function(id) {
             div(class = "button-group mt-3",
               actionButton(ns("btn_reset"), "重置", icon = icon("refresh"), class = "btn-outline-secondary btn-sm w-50"),
               actionButton(ns("btn_refresh"), "刷新", icon = icon("sync"), class = "btn-primary btn-sm w-50")
-            )
+            ),
+
+            # 导入到种植试验按钮
+            div(class = "button-group mt-3",
+              actionButton(ns("btn_import_to_designplot"), "导入到种植试验", icon = icon("upload"), class = "btn-warning btn-sm w-100"),
+              actionButton(ns("btn_import_all_to_designplot"), "导入全部", icon = icon("upload"), class = "btn-warning btn-sm w-100")
+            ),
+            p("将已生成的田试记录导入到种植试验模块", class = "text-muted", style = "font-size: 11px; margin-top: 4px;")
           ),
 
           # 试验列表（按类型分组显示）
@@ -539,6 +546,41 @@ experiments_server <- function(id) {
       selected_experiment(NULL)
       session$sendCustomMessage("toggle_delete_btn", list(show = FALSE))
       refresh_version(refresh_version() + 1)
+    })
+
+    # --- 导入到种植试验 ---
+    observeEvent(input$btn_import_to_designplot, {
+      exp <- selected_experiment()
+      if (is.null(exp) || is.null(exp$experiment_id)) {
+        showNotification("请先从左侧选择一个试验", type = "warning")
+        return()
+      }
+
+      tryCatch({
+        result <- importExperimentToDesignplot(
+          source_experiment_id = exp$experiment_id,
+          source_type = exp$experiment_type,
+          db_path = db_path()
+        )
+
+        if (result$success) {
+          showNotification(result$message, type = "message")
+        } else {
+          showNotification(result$message, type = "error")
+        }
+      }, error = function(e) {
+        showNotification(paste("导入失败:", e$message), type = "error")
+      })
+    })
+
+    # --- 导入全部试验 ---
+    observeEvent(input$btn_import_all_to_designplot, {
+      tryCatch({
+        result <- importAllExperimentsToDesignplot(db_path = db_path())
+        showNotification(result$message, type = "message")
+      }, error = function(e) {
+        showNotification(paste("批量导入失败:", e$message), type = "error")
+      })
     })
 
     # --- 初始化 ---
