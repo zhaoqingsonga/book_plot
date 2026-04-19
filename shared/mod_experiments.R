@@ -353,7 +353,7 @@ experiments_server <- function(id) {
       records <- exp$field_records
 
       # 选择显示列
-      display_cols <- c("fieldid", "experiment_id", "experiment_name", "place", "stage",
+      display_cols <- c("fieldid", "experiment_id", "experiment_name", "place", "stageid", "stage", "name",
                        "rows", "code", "sele", "f", "rp", "created_at")
       display_cols <- display_cols[display_cols %in% names(records)]
       display_df <- records[, display_cols, drop = FALSE]
@@ -364,7 +364,9 @@ experiments_server <- function(id) {
         "experiment_id" = "试验ID",
         "experiment_name" = "试验名称",
         "place" = "地点",
+        "stageid" = "阶段ID",
         "stage" = "阶段",
+        "name" = "材料名称",
         "rows" = "行数",
         "code" = "编号",
         "sele" = "选择",

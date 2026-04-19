@@ -1,8 +1,8 @@
 #!/bin/bash
 # R Shiny App 启动脚本
 # 用法: ./run.sh
-# 端口: 3636
-# 访问: http://<MacMini的IP>:3636
+# 端口: 3681
+# 访问: http://<MacMini的IP>:3681
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -35,11 +35,13 @@ echo "=========================================="
 
 # 启动 Shiny 应用
 # host = "0.0.0.0" 允许局域网访问
-exec Rscript -e "\
-options(shiny.host = '0.0.0.0'); \
-shiny::runApp(\
-  appDir = '.', \
-  port = $PORT, \
-  host = '0.0.0.0', \
-  launch.browser = FALSE \
-)"
+export PORT
+Rscript -e '
+options(shiny.host = "0.0.0.0")
+shiny::runApp(
+  appDir = ".",
+  port = as.integer(Sys.getenv("PORT")),
+  host = "0.0.0.0",
+  launch.browser = FALSE
+)
+'

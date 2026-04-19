@@ -45,13 +45,6 @@ ui <- navbarPage(
     includeScript("www/custom-handlers.js")
   ),
 
-  # === 0. 试验管理 ===
-  tabPanel(
-    "试验管理",
-    icon = icon("flask"),
-    experiments_ui("exp_mod")
-  ),
-
   # === 1. 群体记录本 ===
   tabPanel("群体记录本",
     icon = icon("dna"),
@@ -68,6 +61,13 @@ ui <- navbarPage(
   tabPanel("产比记录本",
     icon = icon("chart-bar"),
     yield_test_ui("yield_mod")
+  ),
+
+  # === 4. 试验管理 ===
+  tabPanel(
+    "试验管理",
+    icon = icon("flask"),
+    experiments_ui("exp_mod")
   ),
 
   # === 关于 ===
