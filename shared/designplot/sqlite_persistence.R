@@ -425,7 +425,7 @@ hasExperimentPlantRun <- function(experiment_id, plant_table_name, db_path = def
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
   existed <- DBI::dbGetQuery(con,
-    "SELECT 1 AS hit FROM designplot_experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ? LIMIT 1",
+    "SELECT 1 AS hit FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ? LIMIT 1",
     params = list(exp_id, table_name))
   is.data.frame(existed) && nrow(existed) > 0
 }
@@ -435,7 +435,7 @@ getPlantedExperimentIds <- function(db_path = defaultSqlitePath()) {
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
-  df <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM designplot_experiment_plant_runs")
+  df <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM experiment_plant_runs")
   if (is.data.frame(df) && nrow(df) > 0) as.character(df$experiment_id) else character(0)
 }
 
@@ -447,9 +447,49 @@ getPlantedTablesForExperiment <- function(experiment_id, db_path = defaultSqlite
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
   df <- DBI::dbGetQuery(con,
-    "SELECT DISTINCT plant_table_name FROM designplot_experiment_plant_runs WHERE experiment_id = ?",
+    "SELECT DISTINCT plant_table_name FROM experiment_plant_runs WHERE experiment_id = ?",
     params = list(exp_id))
   if (is.data.frame(df) && nrow(df) > 0) df$plant_table_name else character(0)
+}
+
+ensureExperimentParentExists <- function(con, experiment_id) {
+  exp_id <- trimws(as.character(experiment_id))
+  if (!nzchar(exp_id)) stop("experiment_id 不能为空")
+
+  existing <- DBI::dbGetQuery(con,
+    "SELECT experiment_id FROM experiments WHERE experiment_id = ? LIMIT 1",
+    params = list(exp_id)
+  )
+  if (is.data.frame(existing) && nrow(existing) > 0) {
+    return(invisible(FALSE))
+  }
+
+  now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  experiment_name <- exp_id
+  total_rows <- 0
+
+  tables <- DBI::dbListTables(con)
+  if ("designplot_experiments" %in% tables) {
+    legacy <- DBI::dbGetQuery(con,
+      "SELECT experiment_name, total_rows, created_at FROM designplot_experiments WHERE experiment_id = ? LIMIT 1",
+      params = list(exp_id)
+    )
+    if (is.data.frame(legacy) && nrow(legacy) > 0) {
+      legacy_name <- trimws(as.character(legacy$experiment_name[1]))
+      if (!is.na(legacy_name) && nzchar(legacy_name)) experiment_name <- legacy_name
+      legacy_rows <- suppressWarnings(as.numeric(legacy$total_rows[1]))
+      if (!is.na(legacy_rows) && legacy_rows >= 0) total_rows <- legacy_rows
+      legacy_created <- trimws(as.character(legacy$created_at[1]))
+      if (!is.na(legacy_created) && nzchar(legacy_created)) now <- legacy_created
+    }
+  }
+
+  DBI::dbExecute(con,
+    "INSERT OR IGNORE INTO experiments(experiment_id, experiment_name, total_rows, created_at, updated_at) VALUES(?, ?, ?, ?, ?)",
+    params = list(exp_id, experiment_name, total_rows, now, format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
+  )
+
+  invisible(TRUE)
 }
 
 saveExperimentPlantRun <- function(experiment_id, plant_table_name, sow_table_name = NULL, plan_id = NULL,
@@ -465,13 +505,14 @@ saveExperimentPlantRun <- function(experiment_id, plant_table_name, sow_table_na
   now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
 
   DBI::dbWithTransaction(con, {
+    ensureExperimentParentExists(con, exp_id)
     existed <- DBI::dbGetQuery(con,
-      "SELECT run_id FROM designplot_experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ? LIMIT 1",
+      "SELECT run_id FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ? LIMIT 1",
       params = list(exp_id, table_name))
     if (is.data.frame(existed) && nrow(existed) > 0) {
       if (!isTRUE(overwrite)) stop("该试验已在当前地块执行过种植；如需重种请启用覆盖重种")
       DBI::dbExecute(con,
-        "UPDATE designplot_experiment_plant_runs SET sow_table_name = ?, plan_id = ?, updated_at = ? WHERE experiment_id = ? AND plant_table_name = ?",
+        "UPDATE experiment_plant_runs SET sow_table_name = ?, plan_id = ?, updated_at = ? WHERE experiment_id = ? AND plant_table_name = ?",
         params = list(
           if (!is.null(sow_table_name) && nzchar(trimws(as.character(sow_table_name)))) trimws(as.character(sow_table_name)) else NA_character_,
           if (!is.null(plan_id) && nzchar(trimws(as.character(plan_id)))) trimws(as.character(plan_id)) else NA_character_,
@@ -479,7 +520,7 @@ saveExperimentPlantRun <- function(experiment_id, plant_table_name, sow_table_na
       return(invisible("updated"))
     }
     DBI::dbExecute(con,
-      "INSERT INTO designplot_experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)",
+      "INSERT INTO experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)",
       params = list(
         exp_id, table_name,
         if (!is.null(sow_table_name) && nzchar(trimws(as.character(sow_table_name)))) trimws(as.character(sow_table_name)) else NA_character_,
@@ -495,7 +536,7 @@ clearExperimentPlantRunByTable <- function(plant_table_name, db_path = defaultSq
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
-  deleted <- DBI::dbExecute(con, "DELETE FROM designplot_experiment_plant_runs WHERE plant_table_name = ?", params = list(table_name))
+  deleted <- DBI::dbExecute(con, "DELETE FROM experiment_plant_runs WHERE plant_table_name = ?", params = list(table_name))
   invisible(as.integer(deleted))
 }
 
@@ -870,16 +911,34 @@ parseAssignmentCell <- function(cell_value) {
   )
 }
 
-extractPlantAssignments <- function(planted_matrix, plan_matrix, experiment_name) {
+extractPlantAssignments <- function(planted_matrix, plan_matrix, experiment_name, previous_matrix = NULL) {
   data_cols <- ncol(plan_matrix) - STAT_COL_COUNT
   result <- list()
   idx <- 1L
   stat_offset_rowno <- ncol(plan_matrix) - STAT_COL_OFFSET_ROWNO
+  previous_data <- NULL
+  if (!is.null(previous_matrix)) {
+    if (!is.matrix(previous_matrix)) stop("previous_matrix 必须为矩阵")
+    if (nrow(previous_matrix) != nrow(planted_matrix) || ncol(previous_matrix) < data_cols) {
+      stop("previous_matrix 与 planted_matrix 维度不匹配")
+    }
+    previous_data <- previous_matrix[, seq_len(data_cols), drop = FALSE]
+  }
   for (row_idx in seq_len(nrow(planted_matrix))) {
     for (col_idx in seq_len(data_cols)) {
       parsed <- parseAssignmentCell(planted_matrix[row_idx, col_idx])
       if (is.null(parsed)) next
       if (is.na(parsed$seq_no) || parsed$seq_no <= 0) next
+
+       if (!is.null(previous_data)) {
+        previous_parsed <- parseAssignmentCell(previous_data[row_idx, col_idx])
+        if (!is.null(previous_parsed) && identical(as.integer(previous_parsed$seq_no), as.integer(parsed$seq_no)) &&
+            identical(trimws(as.character(previous_parsed$material_name)), trimws(as.character(parsed$material_name))) &&
+            identical(as.integer(previous_parsed$material_subrow_no), as.integer(parsed$material_subrow_no))) {
+          next
+        }
+      }
+
       result[[idx]] <- data.frame(
         seq_no = parsed$seq_no, experiment_name = experiment_name, material_name = parsed$material_name,
         material_subrow_no = parsed$material_subrow_no,
@@ -928,12 +987,12 @@ savePlanToSqlite <- function(plan_matrix, experiment_name, db_path = defaultSqli
   invisible(list(plan_id = plan_id, slot_count = nrow(slots), db_path = db_path))
 }
 
-saveAssignmentsToSqlite <- function(plan_id, planted_matrix, plan_matrix, experiment_name, db_path = defaultSqlitePath()) {
+saveAssignmentsToSqlite <- function(plan_id, planted_matrix, plan_matrix, experiment_name, db_path = defaultSqlitePath(), previous_matrix = NULL) {
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
   created_at <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-  assignments <- extractPlantAssignments(planted_matrix, plan_matrix, experiment_name)
+  assignments <- extractPlantAssignments(planted_matrix, plan_matrix, experiment_name, previous_matrix = previous_matrix)
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con, "DELETE FROM plant_assignments WHERE plan_id = ?", params = list(plan_id))
     if (nrow(assignments) > 0) {
@@ -1037,7 +1096,7 @@ capturePlantingUndoCheckpoint <- function(plant_table_name, experiment_id, plan_
 
   epr <- tryCatch(
     DBI::dbGetQuery(con,
-      "SELECT * FROM designplot_experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
+      "SELECT * FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
       params = list(experiment_id, plant_table_name)),
     error = function(e) data.frame()
   )
@@ -1124,13 +1183,14 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
     }
 
     DBI::dbExecute(con,
-      "DELETE FROM designplot_experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
+      "DELETE FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
       params = list(experiment_id, plant_table_name))
 
     epr <- checkpoint$experiment_plant_run
     if (is.data.frame(epr) && nrow(epr) > 0) {
+      ensureExperimentParentExists(con, as.character(epr$experiment_id[1]))
       DBI::dbExecute(con,
-        "INSERT INTO designplot_experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
         params = list(
           as.character(epr$experiment_id[1]),
           as.character(epr$plant_table_name[1]),

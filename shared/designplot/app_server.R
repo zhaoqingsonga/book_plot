@@ -777,6 +777,22 @@ buildDesignplotServer <- function(input, output) {
     paste0("auto_plan_", safe_model, "_", safe_exp)
   })
 
+  createPlantingPlanId <- function(experiment_id, experiment_name, plant_table_name) {
+    exp_id <- trimws(as.character(experiment_id))
+    exp_name <- trimws(as.character(experiment_name))
+    table_name <- trimws(as.character(plant_table_name))
+    field_name <- sub("\\.plant$", "", table_name)
+
+    safe_parts <- c(exp_name, exp_id, field_name)
+    safe_parts <- vapply(safe_parts, function(x) {
+      x <- gsub("[^A-Za-z0-9_-]+", "_", enc2utf8(x))
+      x <- trimws(x)
+      if (!nzchar(x)) "default" else x
+    }, character(1))
+
+    paste0("plant_", paste(safe_parts, collapse = "_"), "_", format(Sys.time(), "%Y%m%d%H%M%OS3"))
+  }
+
   matrixSignature <- function(mat, data_cols = NULL) {
     if (is.null(mat) || !is.matrix(mat) || nrow(mat) == 0 || ncol(mat) == 0) return("empty")
     if (is.null(data_cols) || is.na(data_cols)) data_cols <- max(1, ncol(mat) - STAT_COL_COUNT)
@@ -1234,7 +1250,13 @@ buildDesignplotServer <- function(input, output) {
     if (!isTRUE(capacity_status$ok)) {
       stop(paste0("种植容量不足：可种 ", capacity_status$capacity, " 行；需种 ", capacity_status$demand, " 行；超出 ", capacity_status$overflow, " 行。请缩小种子量或扩大种植范围。"))
     }
-    stable_plan_id <- autoPersistPlanId()
+    exp_df <- experimentOptions()
+    exp_name <- if (is.data.frame(exp_df) && nrow(exp_df) > 0 && exp_id %in% as.character(exp_df$experiment_id)) {
+      as.character(exp_df$experiment_name[match(exp_id, as.character(exp_df$experiment_id))])
+    } else {
+      currentExperimentName()
+    }
+    stable_plan_id <- createPlantingPlanId(exp_id, exp_name, selected_plant_table)
     ck <- capturePlantingUndoCheckpoint(
       plant_table_name = selected_plant_table,
       experiment_id = exp_id,
@@ -1257,15 +1279,16 @@ buildDesignplotServer <- function(input, output) {
     plantTableTrigger(plantTableTrigger() + 1)
     setActivePlantTable(selected_plant_table)
 
-    exp_df <- experimentOptions()
-    exp_name <- if (is.data.frame(exp_df) && nrow(exp_df) > 0 && exp_id %in% as.character(exp_df$experiment_id)) {
-      as.character(exp_df$experiment_name[match(exp_id, as.character(exp_df$experiment_id))])
-    } else {
-      currentExperimentName()
-    }
     plan_result <- savePlanToSqlite(plan_matrix = base_matrix, experiment_name = exp_name, db_path = sqlite_db_path, plan_id = stable_plan_id, metadata = buildPersistenceMeta())
     latest_plan_id(plan_result$plan_id)
-    saveAssignmentsToSqlite(plan_id = plan_result$plan_id, planted_matrix = planted, plan_matrix = base_matrix, experiment_name = exp_name, db_path = sqlite_db_path)
+    saveAssignmentsToSqlite(
+      plan_id = plan_result$plan_id,
+      planted_matrix = planted,
+      plan_matrix = base_matrix,
+      experiment_name = exp_name,
+      db_path = sqlite_db_path,
+      previous_matrix = base_matrix
+    )
     saveExperimentPlantRun(experiment_id = exp_id, plant_table_name = selected_plant_table, sow_table_name = sow_result$table_name,
                            plan_id = plan_result$plan_id, db_path = sqlite_db_path,
                            overwrite = isTRUE(overwrite_mode) || isTRUE(input$allowExperimentReplant))
@@ -1708,7 +1731,7 @@ buildDesignplotServer <- function(input, output) {
       con <- connectDesignplotDb(sqlite_db_path)
       on.exit(DBI::dbDisconnect(con), add = TRUE)
 
-      plant_runs <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM designplot_experiment_plant_runs WHERE plant_table_name = ?", params = list(selected_table))
+      plant_runs <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM experiment_plant_runs WHERE plant_table_name = ?", params = list(selected_table))
       if (!is.data.frame(plant_runs) || nrow(plant_runs) == 0) {
         plant_runs <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM designplot_experiment_records")
       }
@@ -1726,7 +1749,7 @@ buildDesignplotServer <- function(input, output) {
       # ---- 新方案：优先从 plant_assignments 拿精确坐标，回退到 plant 表解析 ----
       # 获取当前地块对应的 plan_id
       plan_runs_df <- DBI::dbGetQuery(con,
-        "SELECT plan_id, experiment_id FROM designplot_experiment_plant_runs WHERE plant_table_name = ?",
+        "SELECT plan_id, experiment_id FROM experiment_plant_runs WHERE plant_table_name = ?",
         params = list(selected_table))
       valid_exp_ids <- if (is.data.frame(plan_runs_df) && nrow(plan_runs_df) > 0) {
         as.character(plan_runs_df$experiment_id)
@@ -1748,21 +1771,16 @@ buildDesignplotServer <- function(input, output) {
       # ---- 策略1：从 plant_assignments 读取精确坐标 ----
       assignments_loaded <- FALSE
       if (length(valid_exp_ids) > 0 && is.data.frame(plan_runs_df) && nrow(plan_runs_df) > 0) {
-        plan_ids <- unique(as.character(plan_runs_df$plan_id))
-        plan_ids <- plan_ids[nzchar(plan_ids)]
-        if (length(plan_ids) > 0) {
-          in_clause <- paste(rep('?', length(plan_ids)), collapse=',')
-          sql_query <- sprintf(
-            "SELECT pa.plan_id, pa.seq_no, pa.experiment_name, pa.material_name,
-                    ps.field_row_no, ps.field_col_no
-             FROM designplot_plant_assignments pa
-             LEFT JOIN designplot_plan_slots ps ON pa.plan_id = ps.plan_id AND pa.seq_no = ps.seq_no
-             WHERE pa.plan_id IN (%s)",
-            in_clause)
-          assignments_df <- DBI::dbGetQuery(con, sql_query, params = as.list(plan_ids))
-        } else {
-          assignments_df <- data.frame()
-        }
+        # 直接按当前地块 JOIN experiment_plant_runs 获取 assignments，
+        # 避免 experiment_plant_runs.plan_id 为空时 IN (...) 失效，导致整图被误判为补种
+        assignments_df <- DBI::dbGetQuery(con,
+          "SELECT pa.plan_id, pa.seq_no, pa.experiment_name, pa.material_name,
+                  pa.field_row_no, pa.field_col_no,
+                  pr.experiment_id
+           FROM plant_assignments pa
+           INNER JOIN experiment_plant_runs pr ON pa.plan_id = pr.plan_id
+           WHERE pr.plant_table_name = ?",
+          params = list(selected_table))
 
         if (is.data.frame(assignments_df) && nrow(assignments_df) > 0) {
           # 用 field_col_no 直接建立 plant 表列索引（seq_no 从1开始对应第1列）
@@ -1776,22 +1794,28 @@ buildDesignplotServer <- function(input, output) {
           seq_mat_map <- stats::setNames(as.character(assignments_df$material_name),
                                          as.integer(assignments_df$seq_no))
 
-          # 已知实验的 stage_set（来自 plant_assignments.experiment_name）
+          # 已知实验材料集合：用于把真实已种材料从“补种”识别里排除
           known_exp_names <- unique(as.character(assignments_df$experiment_name))
-          stage_set <- known_exp_names
+          stage_set <- unique(trimws(as.character(assignments_df$material_name)))
+          stage_set <- stage_set[!is.na(stage_set) & nzchar(stage_set)]
 
-          # 建立 cell_map：实验维度（用实验名作为 key）
+          # 建立 cell_map：用 experiment_id 做 key（同一个实验 ID → 同一种颜色）
+          # name 列仍存 experiment_name 用于图例显示
           exp_cell_map <- vector("list", 0)
           known_mat_names <- character()
+          # 建立 seq_no → experiment_id 的映射（用于补种排除）
+          seq_exp_id_map <- character()
 
           for (i in seq_len(nrow(assignments_df))) {
             seq_no <- as.integer(assignments_df$seq_no[i])
+            exp_id <- as.character(assignments_df$experiment_id[i])
             exp_name <- as.character(assignments_df$experiment_name[i])
             mat_name <- as.character(assignments_df$material_name[i])
             col_no <- as.integer(assignments_df$field_col_no[i])
             row_no <- as.integer(assignments_df$field_row_no[i])
 
             if (is.na(col_no) || is.na(row_no) || col_no <= 0 || row_no <= 0) next
+            if (is.na(exp_id) || !nzchar(exp_id)) next
             # plant_matrix 行索引：排数向量定位；列索引：field_col_no 直接使用
             row_idx <- which(rowno_vec == row_no)
             if (length(row_idx) == 0) next
@@ -1799,21 +1823,38 @@ buildDesignplotServer <- function(input, output) {
 
             if (col_idx < 1 || col_idx > ncol(plant_data)) next
 
-            # 实验维度
-            if (is.null(exp_cell_map[[exp_name]])) {
-              exp_cell_map[[exp_name]] <- matrix(FALSE, nrow = nrow(plant_data), ncol = ncol(plant_data))
+            # 实验维度：用 experiment_id 做 key
+            if (is.null(exp_cell_map[[exp_id]])) {
+              exp_cell_map[[exp_id]] <- matrix(FALSE, nrow = nrow(plant_data), ncol = ncol(plant_data))
             }
-            exp_cell_map[[exp_name]][row_idx, col_idx] <- TRUE
+            exp_cell_map[[exp_id]][row_idx, col_idx] <- TRUE
             known_mat_names <- c(known_mat_names, mat_name)
+            seq_exp_id_map[as.character(seq_no)] <- exp_id
           }
 
-          for (exp_name in names(exp_cell_map)) {
-            is_exp_material <- exp_cell_map[[exp_name]]
+          # 生成 experiment_id → experiment_name 的映射（用于图例标签）
+          unique_exp_ids <- unique(names(exp_cell_map))
+          id_to_name_map <- character()
+          for (i in seq_len(nrow(assignments_df))) {
+            exp_id <- as.character(assignments_df$experiment_id[i])
+            exp_name <- as.character(assignments_df$experiment_name[i])
+            if (!is.na(exp_id) && nzchar(exp_id) && !is.na(exp_name) && nzchar(exp_name)) {
+              id_to_name_map[exp_id] <- exp_name
+            }
+          }
+
+          for (exp_id in names(exp_cell_map)) {
+            is_exp_material <- exp_cell_map[[exp_id]]
             if (!any(is_exp_material, na.rm = TRUE)) next
             boxes <- splitConnectedBoxes(is_exp_material, rowno_vec)
+            display_name <- if (!is.na(id_to_name_map[exp_id]) && nzchar(id_to_name_map[exp_id])) {
+              paste0(id_to_name_map[exp_id], " (", exp_id, ")")  # 图例显示：名称(ID)
+            } else {
+              exp_id
+            }
             for (b in boxes) {
               layout_info[[length(layout_info) + 1]] <- data.frame(
-                type = "实验", name = exp_name,
+                type = "实验", name = display_name,
                 start_row = b$start_row, end_row = b$end_row,
                 start_col = b$start_col, end_col = b$end_col,
                 rows = b$end_row - b$start_row + 1,
@@ -1860,7 +1901,7 @@ buildDesignplotServer <- function(input, output) {
         }
       }
 
-      # ---- 策略2（回退）：从 plant 表解析，用 stageid == material_name 匹配 ----
+      # ---- 策略2（回退）：从 plant 表解析，用 stageid == material_name 匹配 experiment_id ----
       if (!assignments_loaded) {
         exp_records <- DBI::dbGetQuery(con,
           "SELECT experiment_id, stageid FROM designplot_experiment_records")
@@ -1880,6 +1921,7 @@ buildDesignplotServer <- function(input, output) {
           stage_set <- unique(as.character(stage_to_exp$stageid))
 
           if (nrow(stage_to_exp) > 0) {
+            # 建立 stageid → experiment_id 的映射
             exp_name_map <- stats::setNames(as.character(exp_names_df$experiment_name), as.character(exp_names_df$experiment_id))
             exp_cell_map <- vector("list", 0)
 
@@ -1891,20 +1933,24 @@ buildDesignplotServer <- function(input, output) {
                 hit <- stage_to_exp$experiment_id[stage_to_exp$stageid == stage_name]
                 if (length(hit) == 0) next
                 exp_id <- as.character(hit[1])
-                exp_name_val <- as.character(exp_name_map[exp_id])
-                key <- if (!is.na(exp_name_val) && nzchar(trimws(exp_name_val))) exp_name_val else exp_id
-                if (is.null(exp_cell_map[[key]])) exp_cell_map[[key]] <- matrix(FALSE, nrow = nrow(plant_data), ncol = ncol(plant_data))
-                exp_cell_map[[key]][r, c] <- TRUE
+                # 用 experiment_id 做 key，同一实验 ID → 同色
+                if (is.null(exp_cell_map[[exp_id]])) exp_cell_map[[exp_id]] <- matrix(FALSE, nrow = nrow(plant_data), ncol = ncol(plant_data))
+                exp_cell_map[[exp_id]][r, c] <- TRUE
               }
             }
 
-            for (exp_name in names(exp_cell_map)) {
-              is_exp_material <- exp_cell_map[[exp_name]]
+            for (exp_id in names(exp_cell_map)) {
+              is_exp_material <- exp_cell_map[[exp_id]]
               if (!any(is_exp_material, na.rm = TRUE)) next
               boxes <- splitConnectedBoxes(is_exp_material, rowno_vec)
+              display_name <- if (!is.na(exp_name_map[exp_id]) && nzchar(trimws(exp_name_map[exp_id]))) {
+                paste0(exp_name_map[exp_id], " (", exp_id, ")")
+              } else {
+                exp_id
+              }
               for (b in boxes) {
                 layout_info[[length(layout_info) + 1]] <- data.frame(
-                  type = "实验", name = exp_name,
+                  type = "实验", name = display_name,
                   start_row = b$start_row, end_row = b$end_row,
                   start_col = b$start_col, end_col = b$end_col,
                   rows = b$end_row - b$start_row + 1,
@@ -1945,37 +1991,6 @@ buildDesignplotServer <- function(input, output) {
               color = "#111827", stringsAsFactors = FALSE
             )
           }
-        }
-      }
-
-      # 识别补种材料
-      supplement_cell_map <- vector("list", 0)
-      for (r in seq_len(nrow(plant_data))) {
-        for (c in seq_len(ncol(plant_data))) {
-          parsed <- tryCatch(parseAssignmentCell(plant_data[r, c]), error = function(e) NULL)
-          if (is.null(parsed)) next
-          mat_name <- trimws(as.character(parsed$material_name))
-          if (!nzchar(mat_name)) next
-          if (mat_name %in% stage_set) next
-          key <- paste0("补种:", mat_name)
-          if (is.null(supplement_cell_map[[key]])) supplement_cell_map[[key]] <- matrix(FALSE, nrow = nrow(plant_data), ncol = ncol(plant_data))
-          supplement_cell_map[[key]][r, c] <- TRUE
-        }
-      }
-
-      for (sup_name in names(supplement_cell_map)) {
-        is_sup <- supplement_cell_map[[sup_name]]
-        if (!any(is_sup, na.rm = TRUE)) next
-        boxes <- splitConnectedBoxes(is_sup, rowno_vec)
-        for (b in boxes) {
-          layout_info[[length(layout_info) + 1]] <- data.frame(
-            type = "补种", name = sup_name,
-            start_row = b$start_row, end_row = b$end_row,
-            start_col = b$start_col, end_col = b$end_col,
-            rows = b$end_row - b$start_row + 1,
-            cols = b$end_col - b$start_col + 1,
-            color = "#111827", stringsAsFactors = FALSE
-          )
         }
       }
 
