@@ -85,28 +85,14 @@ buildDesignplotUI <- function(){
                         tags$div(
                           style = "background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;margin-bottom:14px;color:#1e3a5f;font-size:13px;line-height:1.55;",
                           tags$strong("建议顺序："),
-                          "导入试验 → 选种植地块 → 选试验与种植范围 → 执行种植 →（可选）区域补种"
+                          "选种植地块 → 选试验与种植范围 → 执行种植 →（可选）区域补种"
                         ),
                         fluidRow(
-                          column(6,
+                          column(12,
                             tags$div(
-                              style = "background:#ffffff;border:1px solid #dbe4ee;border-left:4px solid #3b82f6;border-radius:10px;padding:12px;margin-bottom:12px;",
+                              style = "background:#ffffff;border:1px solid #dbe4ee;border-left:4px solid #10b981;border-radius:10px;padding:12px;margin-bottom:12px;box-shadow:0 2px 8px rgba(15,23,42,0.06);",
                               fluidRow(
-                                column(1, tags$span("1", style = "background:#3b82f6;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
-                                column(11, tags$span("导入试验", style = "font-size:15px;font-weight:600;color:#1f2937;margin-left:6px;"))
-                              ),
-                              tags$p("上传含 planting 工作表的 Excel 文件以导入试验。", style = "margin:4px 0 8px 0;color:#6b7280;font-size:12px;"),
-                              fileInput("experimentImportFile", "上传试验Excel（含 planting 工作表）", multiple = FALSE,
-                                        accept = c(".xlsx", ".xls", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
-                              textInput("experimentImportName", "试验名称（默认=上传文件名）", value = ""),
-                              actionButton("importExperimentPlanting", "导入试验", class = "btn-primary", width = "100%")
-                            )
-                          ),
-                          column(6,
-                            tags$div(
-                              style = "background:#ffffff;border:1px solid #dbe4ee;border-radius:10px;padding:12px;margin-bottom:12px;box-shadow:0 2px 8px rgba(15,23,42,0.06);",
-                              fluidRow(
-                                column(1, tags$span("2", style = "background:#10b981;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
+                                column(1, tags$span("1", style = "background:#10b981;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
                                 column(11, tags$span("种植配置（先选地块，再选试验与范围）", style = "font-size:15px;font-weight:600;color:#1f2937;margin-left:6px;"))
                               ),
                               tags$div(style = "height:4px;"),
@@ -123,7 +109,7 @@ buildDesignplotUI <- function(){
                             tags$div(
                               style = "background:#ffffff;border:1px solid #dbe4ee;border-left:4px solid #2563eb;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 2px 8px rgba(15,23,42,0.06);",
                               fluidRow(
-                                column(1, tags$span("3", style = "background:#2563eb;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
+                                column(1, tags$span("2", style = "background:#2563eb;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
                                 column(11, tags$span("执行种植", style = "font-size:16px;font-weight:600;color:#1f2937;margin-left:6px;"))
                               ),
                               tags$div(style = "height:8px;"),
@@ -141,7 +127,7 @@ buildDesignplotUI <- function(){
                             tags$div(
                               style = "background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:10px;padding:12px;margin-bottom:12px;",
                               fluidRow(
-                                column(1, tags$span("4", style = "background:#f59e0b;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
+                                column(1, tags$span("3", style = "background:#f59e0b;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
                                 column(11, tags$span("区域补种（可选）", style = "font-size:15px;font-weight:600;color:#1f2937;margin-left:6px;"))
                               ),
                               tags$div(style = "height:4px;"),

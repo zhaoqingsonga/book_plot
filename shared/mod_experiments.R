@@ -33,6 +33,12 @@ experiments_ui <- function(id) {
               selected = "", width = "100%"
             ),
 
+            # 地点筛选
+            selectInput(ns("filter_location"), "地点",
+              choices = c("全部" = ""),
+              selected = "", width = "100%"
+            ),
+
             # 隐藏的点击处理器
             textInput(ns("experiment_list_click"), "", value = ""),
             tags$script(HTML(sprintf("
@@ -180,10 +186,11 @@ experiments_server <- function(id) {
         q <- sprintf(
           "SELECT r.experiment_id, r.experiment_name, r.total_rows, r.has_generated,
                   r.generated_at, r.created_at, r.experiment_id as fieldid,
-                  '%s' as experiment_type
+                  '%s' as experiment_type,
+                  (SELECT f.place FROM %s f WHERE f.experiment_id = r.experiment_id LIMIT 1) as place
            FROM %s r
            WHERE r.has_generated = 1",
-          t, rec_tbl
+          t, field_tbl, rec_tbl
         )
         exps <- DBI::dbGetQuery(con, q)
 
@@ -214,6 +221,7 @@ experiments_server <- function(id) {
           generated_at = character(),
           created_at = character(),
           year = character(),
+          place = character(),
           stringsAsFactors = FALSE
         ))
       }
@@ -232,6 +240,19 @@ experiments_server <- function(id) {
         choices = c("全部" = "", stats::setNames(all_years, all_years)),
         selected = selected_year
       )
+
+      # 更新地点下拉框
+      all_locs <- sort(unique(stats::na.omit(load_experiments()$place)))
+      all_locs <- all_locs[nzchar(all_locs)]
+      selected_loc <- isolate(input$filter_location)
+      selected_loc <- if (!is.null(selected_loc) && selected_loc %in% all_locs) selected_loc else ""
+
+      updateSelectInput(
+        session,
+        "filter_location",
+        choices = c("全部" = "", stats::setNames(all_locs, all_locs)),
+        selected = selected_loc
+      )
     }, ignoreNULL = FALSE)
 
     # --- 获取试验列表（带分组） ---
@@ -239,9 +260,14 @@ experiments_server <- function(id) {
       combined <- load_experiments()
       year_val <- input$filter_year
       search_val <- input$filter_search
+      loc_val <- input$filter_location
 
       if (!is.null(year_val) && nzchar(year_val)) {
         combined <- combined[combined$year == year_val, , drop = FALSE]
+      }
+
+      if (!is.null(loc_val) && nzchar(loc_val)) {
+        combined <- combined[combined$place == loc_val, , drop = FALSE]
       }
 
       # 搜索筛选
@@ -646,6 +672,7 @@ experiments_server <- function(id) {
     observeEvent(input$btn_reset, {
       updateSelectInput(session, "filter_year", selected = "")
       updateSelectInput(session, "filter_type", selected = "")
+      updateSelectInput(session, "filter_location", selected = "")
       updateTextInput(session, "filter_search", value = "")
       selected_experiment(NULL)
       session$sendCustomMessage("toggle_delete_btn", list(show = FALSE))
@@ -677,10 +704,12 @@ experiments_server <- function(id) {
       })
     })
 
-    # --- 导入全部试验 ---
+    # --- 导入全部试验（按当前地点筛选）---
     observeEvent(input$btn_import_all_to_designplot, {
       tryCatch({
-        result <- importAllExperimentsToDesignplot(db_path = db_path())
+        loc_filter <- input$filter_location
+        loc_filter <- if (is.null(loc_filter) || !nzchar(loc_filter)) NULL else loc_filter
+        result <- importAllExperimentsToDesignplot(location_filter = loc_filter, db_path = db_path())
         showNotification(result$message, type = "message")
       }, error = function(e) {
         showNotification(paste("批量导入失败:", e$message), type = "error")

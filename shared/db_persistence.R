@@ -1150,6 +1150,7 @@ initDesignplotTables <- function(con) {
       rp TEXT,
       rows REAL,
       line_number TEXT,
+      place TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY(experiment_id) REFERENCES designplot_experiments(experiment_id) ON DELETE CASCADE
     )
@@ -1165,6 +1166,10 @@ initDesignplotTables <- function(con) {
   }, error = function(e) {})
   tryCatch({
     DBI::dbExecute(con, "ALTER TABLE designplot_experiments ADD COLUMN source_id TEXT")
+  }, error = function(e) {})
+  # 迁移：为 designplot_experiment_records 添加 place 列（如果不存在）
+  tryCatch({
+    DBI::dbExecute(con, "ALTER TABLE designplot_experiment_records ADD COLUMN place TEXT")
   }, error = function(e) {})
 }
 
@@ -1214,7 +1219,7 @@ importExperimentToDesignplot <- function(source_experiment_id, source_type = c("
 
     DBI::dbExecute(con, "DELETE FROM designplot_experiment_records WHERE experiment_id = ?", params = list(new_exp_id))
 
-    dp_records <- records[, c("fieldid", "id", "stageid", "name", "source", "code", "rp", "rows", "line_number"), drop = FALSE]
+    dp_records <- records[, c("fieldid", "id", "stageid", "name", "source", "code", "rp", "rows", "line_number", "place"), drop = FALSE]
     dp_records$experiment_id <- new_exp_id
     dp_records$created_at <- now
 
@@ -1239,8 +1244,30 @@ importExperimentToDesignplot <- function(source_experiment_id, source_type = c("
   )
 }
 
-# ---- 从试验管理导入全部试验 ----
-importAllExperimentsToDesignplot <- function(db_path = defaultDbPath()) {
+# ---- 获取所有可用地点列表（从田试记录表去重）----
+getAvailableLocations <- function(db_path = defaultDbPath()) {
+  con <- connectDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDb(con)
+
+  all_places <- character(0)
+
+  for (field_table in c("population_field_records", "line_selection_field_records", "yield_test_field_records")) {
+    tryCatch({
+      places <- DBI::dbGetQuery(con,
+        sprintf("SELECT DISTINCT place FROM %s WHERE place IS NOT NULL AND place != '' ORDER BY place", field_table)
+      )
+      if (nrow(places) > 0) {
+        all_places <- c(all_places, places$place)
+      }
+    }, error = function(e) {})
+  }
+
+  unique(all_places)
+}
+
+# ---- 从试验管理导入全部试验（按地点过滤）----
+importAllExperimentsToDesignplot <- function(location_filter = NULL, db_path = defaultDbPath()) {
   con <- connectDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDb(con)
@@ -1254,10 +1281,27 @@ importAllExperimentsToDesignplot <- function(db_path = defaultDbPath()) {
       line_selection = "line_selection_records",
       yield_test = "yield_test_records"
     )
-
-    experiments <- DBI::dbGetQuery(con,
-      sprintf("SELECT experiment_id FROM %s WHERE has_generated = 1", records_table)
+    field_table <- switch(source_type,
+      population = "population_field_records",
+      line_selection = "line_selection_field_records",
+      yield_test = "yield_test_field_records"
     )
+
+    # 基础查询：已生成的实验
+    query <- sprintf("SELECT experiment_id FROM %s WHERE has_generated = 1", records_table)
+
+    if (!is.null(location_filter) && nzchar(trimws(location_filter))) {
+      # 按地点过滤：只选该地点的实验
+      query <- sprintf(
+        "SELECT DISTINCT r.experiment_id FROM %s r
+         INNER JOIN %s f ON r.experiment_id = f.experiment_id
+         WHERE r.has_generated = 1 AND f.place = ?",
+        records_table, field_table
+      )
+      experiments <- DBI::dbGetQuery(con, query, params = list(location_filter))
+    } else {
+      experiments <- DBI::dbGetQuery(con, query)
+    }
 
     for (exp_id in experiments$experiment_id) {
       result <- importExperimentToDesignplot(exp_id, source_type, db_path)
@@ -1266,10 +1310,15 @@ importAllExperimentsToDesignplot <- function(db_path = defaultDbPath()) {
   }
 
   success_count <- sum(sapply(results, function(r) r$success))
+  loc_msg <- if (!is.null(location_filter) && nzchar(trimws(location_filter))) {
+    sprintf("（地点：%s）", location_filter)
+  } else {
+    ""
+  }
   list(
     total_imported = success_count,
     results = results,
-    message = sprintf("共成功导入 %d 个试验", success_count)
+    message = sprintf("共成功导入 %d 个试验 %s", success_count, loc_msg)
   )
 }
 
