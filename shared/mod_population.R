@@ -60,6 +60,19 @@ population_ui <- function(id) {
                   icon("chart-bar"), " 数据统计"
                 ),
                 verbatimTextOutput(ns("stats"))
+              ),
+
+              div(class = "card",
+                div(class = "record-list",
+                  DT::dataTableOutput(ns("record_list"))
+                )
+              ),
+
+              div(class = "card",
+                div(class = "card-header",
+                  icon("info-circle"), " 选中记录详情"
+                ),
+                DT::dataTableOutput(ns("detail_table"))
               )
             )
           )
@@ -179,33 +192,6 @@ population_ui <- function(id) {
                 DT::dataTableOutput(ns("view_table"))
               )
             )
-          )
-        )
-      ),
-
-      # === 3. 维护群体记录 ===
-      tabPanel("维护记录",
-        value = "maintain",
-        icon = icon("list-alt"),
-
-        div(class = "tab-panel",
-          h3(class = "panel-title",
-            span(class = "icon", icon("list-alt")),
-            "群体试验记录"
-          ),
-          p("查看已保存的试验记录及已生成的田试数据。", class = "text-muted fb-panel-intro"),
-
-          div(class = "card",
-            div(class = "record-list",
-              DT::dataTableOutput(ns("record_list"))
-            )
-          ),
-
-          div(class = "card",
-            div(class = "card-header",
-              icon("info-circle"), " 选中记录详情"
-            ),
-            DT::dataTableOutput(ns("detail_table"))
           )
         )
       ),
