@@ -1732,9 +1732,9 @@ buildDesignplotServer <- function(input, output) {
       con <- connectDesignplotDb(sqlite_db_path)
       on.exit(DBI::dbDisconnect(con), add = TRUE)
 
-      plant_runs <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM experiment_plant_runs WHERE plant_table_name = ?", params = list(selected_table))
+      plant_runs <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM designplot_experiment_plant_runs WHERE plant_table_name = ?", params = list(selected_table))
       if (!is.data.frame(plant_runs) || nrow(plant_runs) == 0) {
-        plant_runs <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM experiment_records")
+        plant_runs <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM designplot_experiment_records")
       }
 
       special_areas <- list(
@@ -1748,8 +1748,8 @@ buildDesignplotServer <- function(input, output) {
       layout_info <- list()
 
       # 识别实验区域
-      exp_records <- DBI::dbGetQuery(con, "SELECT experiment_id, stageid FROM experiment_records")
-      exp_names_df <- DBI::dbGetQuery(con, "SELECT experiment_id, experiment_name FROM experiments")
+      exp_records <- DBI::dbGetQuery(con, "SELECT experiment_id, stageid FROM designplot_experiment_records")
+      exp_names_df <- DBI::dbGetQuery(con, "SELECT experiment_id, experiment_name FROM designplot_experiments")
       stage_set <- character(0)
 
       if (is.data.frame(exp_records) && nrow(exp_records) > 0) {

@@ -339,7 +339,7 @@ readPlantingSheetFromExcel <- function(excel_path, sheet = "planting") {
 generateUniqueExperimentId <- function(con, experiment_name, total_rows) {
   for (i in seq_len(20)) {
     candidate <- createExperimentId(experiment_name, total_rows, attempt = i)
-    existed <- DBI::dbGetQuery(con, "SELECT 1 AS hit FROM experiments WHERE experiment_id = ? LIMIT 1", params = list(candidate))
+    existed <- DBI::dbGetQuery(con, "SELECT 1 AS hit FROM designplot_experiments WHERE experiment_id = ? LIMIT 1", params = list(candidate))
     if (!is.data.frame(existed) || nrow(existed) == 0) return(candidate)
   }
   stop("无法生成唯一试验ID，请重试")
@@ -363,21 +363,21 @@ saveExperimentWithRecords <- function(experiment_name, planting_df, db_path = de
   }
 
   DBI::dbWithTransaction(con, {
-    existed <- DBI::dbGetQuery(con, "SELECT experiment_id FROM experiments WHERE experiment_id = ? LIMIT 1", params = list(exp_id))
+    existed <- DBI::dbGetQuery(con, "SELECT experiment_id FROM designplot_experiments WHERE experiment_id = ? LIMIT 1", params = list(exp_id))
     if (!is.data.frame(existed) || nrow(existed) == 0) {
       DBI::dbExecute(con,
-        "INSERT INTO experiments(experiment_id, experiment_name, total_rows, created_at, updated_at) VALUES(?, ?, ?, ?, ?)",
+        "INSERT INTO designplot_experiments(experiment_id, experiment_name, total_rows, created_at, updated_at) VALUES(?, ?, ?, ?, ?)",
         params = list(exp_id, exp_name, total_rows, now, now))
     } else {
       DBI::dbExecute(con,
-        "UPDATE experiments SET experiment_name = ?, total_rows = ?, updated_at = ? WHERE experiment_id = ?",
+        "UPDATE designplot_experiments SET experiment_name = ?, total_rows = ?, updated_at = ? WHERE experiment_id = ?",
         params = list(exp_name, total_rows, now, exp_id))
     }
 
-    DBI::dbExecute(con, "DELETE FROM experiment_records WHERE experiment_id = ?", params = list(exp_id))
+    DBI::dbExecute(con, "DELETE FROM designplot_experiment_records WHERE experiment_id = ?", params = list(exp_id))
     normalized$experiment_id <- exp_id
     normalized$created_at <- now
-    DBI::dbWriteTable(con, "experiment_records",
+    DBI::dbWriteTable(con, "designplot_experiment_records",
       normalized[, c("experiment_id", "fieldid", "id", "stageid", "name", "former_stageid", "source", "code", "rp", "rows", "line_number", "created_at")],
       append = TRUE)
   })
@@ -395,7 +395,7 @@ importExperimentFromPlantingExcel <- function(excel_path, experiment_name = NULL
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
   latest <- DBI::dbGetQuery(con,
-    "SELECT experiment_id, experiment_name, total_rows FROM experiments WHERE experiment_name = ? ORDER BY created_at DESC, experiment_id DESC LIMIT 1",
+    "SELECT experiment_id, experiment_name, total_rows FROM designplot_experiments WHERE experiment_name = ? ORDER BY created_at DESC, experiment_id DESC LIMIT 1",
     params = list(exp_name))
   if (is.data.frame(latest) && nrow(latest) > 0) {
     result$experiment_id <- as.character(latest$experiment_id[1])
@@ -425,7 +425,7 @@ hasExperimentPlantRun <- function(experiment_id, plant_table_name, db_path = def
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
   existed <- DBI::dbGetQuery(con,
-    "SELECT 1 AS hit FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ? LIMIT 1",
+    "SELECT 1 AS hit FROM designplot_experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ? LIMIT 1",
     params = list(exp_id, table_name))
   is.data.frame(existed) && nrow(existed) > 0
 }
@@ -435,7 +435,7 @@ getPlantedExperimentIds <- function(db_path = defaultSqlitePath()) {
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
-  df <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM experiment_plant_runs")
+  df <- DBI::dbGetQuery(con, "SELECT DISTINCT experiment_id FROM designplot_experiment_plant_runs")
   if (is.data.frame(df) && nrow(df) > 0) as.character(df$experiment_id) else character(0)
 }
 
@@ -447,7 +447,7 @@ getPlantedTablesForExperiment <- function(experiment_id, db_path = defaultSqlite
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
   df <- DBI::dbGetQuery(con,
-    "SELECT DISTINCT plant_table_name FROM experiment_plant_runs WHERE experiment_id = ?",
+    "SELECT DISTINCT plant_table_name FROM designplot_experiment_plant_runs WHERE experiment_id = ?",
     params = list(exp_id))
   if (is.data.frame(df) && nrow(df) > 0) df$plant_table_name else character(0)
 }
@@ -466,12 +466,12 @@ saveExperimentPlantRun <- function(experiment_id, plant_table_name, sow_table_na
 
   DBI::dbWithTransaction(con, {
     existed <- DBI::dbGetQuery(con,
-      "SELECT run_id FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ? LIMIT 1",
+      "SELECT run_id FROM designplot_experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ? LIMIT 1",
       params = list(exp_id, table_name))
     if (is.data.frame(existed) && nrow(existed) > 0) {
       if (!isTRUE(overwrite)) stop("该试验已在当前地块执行过种植；如需重种请启用覆盖重种")
       DBI::dbExecute(con,
-        "UPDATE experiment_plant_runs SET sow_table_name = ?, plan_id = ?, updated_at = ? WHERE experiment_id = ? AND plant_table_name = ?",
+        "UPDATE designplot_experiment_plant_runs SET sow_table_name = ?, plan_id = ?, updated_at = ? WHERE experiment_id = ? AND plant_table_name = ?",
         params = list(
           if (!is.null(sow_table_name) && nzchar(trimws(as.character(sow_table_name)))) trimws(as.character(sow_table_name)) else NA_character_,
           if (!is.null(plan_id) && nzchar(trimws(as.character(plan_id)))) trimws(as.character(plan_id)) else NA_character_,
@@ -479,7 +479,7 @@ saveExperimentPlantRun <- function(experiment_id, plant_table_name, sow_table_na
       return(invisible("updated"))
     }
     DBI::dbExecute(con,
-      "INSERT INTO experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)",
+      "INSERT INTO designplot_experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)",
       params = list(
         exp_id, table_name,
         if (!is.null(sow_table_name) && nzchar(trimws(as.character(sow_table_name)))) trimws(as.character(sow_table_name)) else NA_character_,
@@ -495,7 +495,7 @@ clearExperimentPlantRunByTable <- function(plant_table_name, db_path = defaultSq
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
-  deleted <- DBI::dbExecute(con, "DELETE FROM experiment_plant_runs WHERE plant_table_name = ?", params = list(table_name))
+  deleted <- DBI::dbExecute(con, "DELETE FROM designplot_experiment_plant_runs WHERE plant_table_name = ?", params = list(table_name))
   invisible(as.integer(deleted))
 }
 
@@ -518,7 +518,7 @@ deleteExperiment <- function(experiment_id, db_path = defaultSqlitePath()) {
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
-  deleted <- DBI::dbExecute(con, "DELETE FROM experiments WHERE experiment_id = ?", params = list(trimws(experiment_id)))
+  deleted <- DBI::dbExecute(con, "DELETE FROM designplot_experiments WHERE experiment_id = ?", params = list(trimws(experiment_id)))
   invisible(deleted)
 }
 
@@ -1037,7 +1037,7 @@ capturePlantingUndoCheckpoint <- function(plant_table_name, experiment_id, plan_
 
   epr <- tryCatch(
     DBI::dbGetQuery(con,
-      "SELECT * FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
+      "SELECT * FROM designplot_experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
       params = list(experiment_id, plant_table_name)),
     error = function(e) data.frame()
   )
@@ -1124,13 +1124,13 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
     }
 
     DBI::dbExecute(con,
-      "DELETE FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
+      "DELETE FROM designplot_experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
       params = list(experiment_id, plant_table_name))
 
     epr <- checkpoint$experiment_plant_run
     if (is.data.frame(epr) && nrow(epr) > 0) {
       DBI::dbExecute(con,
-        "INSERT INTO experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO designplot_experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
         params = list(
           as.character(epr$experiment_id[1]),
           as.character(epr$plant_table_name[1]),
