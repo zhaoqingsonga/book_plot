@@ -604,8 +604,8 @@ buildDesignplotServer <- function(input, output) {
       imported_id <- trimws(import_result$experiment_id)
       if (!nzchar(imported_id)) stop("导入后未获取到试验ID")
 
-      experiments_all <- readTableFromSqlite("experiments", sqlite_db_path)
-      records_all <- readTableFromSqlite("experiment_records", sqlite_db_path)
+      experiments_all <- readTableFromSqlite("designplot_experiments", sqlite_db_path)
+      records_all <- readTableFromSqlite("designplot_experiment_records", sqlite_db_path)
       exp_rows <- if (is.data.frame(experiments_all) && nrow(experiments_all) > 0 && "experiment_id" %in% names(experiments_all)) {
         experiments_all[as.character(experiments_all$experiment_id) == imported_id, , drop = FALSE]
       } else data.frame()
@@ -989,7 +989,7 @@ buildDesignplotServer <- function(input, output) {
     experimentsTrigger()
     recordsTrigger()
     plantTableTrigger()
-    exp_df <- readTableFromSqlite("experiments", sqlite_db_path)
+    exp_df <- readTableFromSqlite("designplot_experiments", sqlite_db_path)
     if (!is.data.frame(exp_df) || nrow(exp_df) == 0) return(data.frame())
     exp_df
   })
@@ -997,7 +997,7 @@ buildDesignplotServer <- function(input, output) {
   experimentSeedData <- reactive({
     exp_id <- trimws(input$sqliteFilterExperimentId)
     validate(need(nzchar(exp_id), "请先选择试验名称"))
-    records <- readTableFromSqlite("experiment_records", sqlite_db_path)
+    records <- readTableFromSqlite("designplot_experiment_records", sqlite_db_path)
     validate(need(is.data.frame(records) && nrow(records) > 0, "暂无试验记录"))
     records <- records[as.character(records$experiment_id) == exp_id, , drop = FALSE]
     validate(need(nrow(records) > 0, "当前试验没有可种植记录"))
@@ -1079,8 +1079,8 @@ buildDesignplotServer <- function(input, output) {
     experimentsTrigger()
     recordsTrigger()
     plantTableTrigger()
-    exp_df <- readTableFromSqlite("experiments", sqlite_db_path)
-    rec_df <- readTableFromSqlite("experiment_records", sqlite_db_path)
+    exp_df <- readTableFromSqlite("designplot_experiments", sqlite_db_path)
+    rec_df <- readTableFromSqlite("designplot_experiment_records", sqlite_db_path)
     exp_count <- if (is.data.frame(exp_df) && nrow(exp_df) > 0) nrow(exp_df) else 0L
     rec_count <- if (is.data.frame(rec_df) && nrow(rec_df) > 0) nrow(rec_df) else 0L
     selected_exp <- trimws(input$sqliteFilterExperimentId)
@@ -1429,7 +1429,7 @@ buildDesignplotServer <- function(input, output) {
 
   recordsLatestMap <- reactive({
     recordsTrigger()
-    records <- readTableFromSqlite("experiment_records", sqlite_db_path)
+    records <- readTableFromSqlite("designplot_experiment_records", sqlite_db_path)
     if (!is.data.frame(records) || nrow(records) == 0 || !all(c("stageid", "name", "former_stageid", "source") %in% names(records))) return(NULL)
     stage_vec <- trimws(as.character(records$stageid))
     valid_idx <- !is.na(stage_vec) & nzchar(stage_vec)
@@ -1547,7 +1547,7 @@ buildDesignplotServer <- function(input, output) {
   # ===========================================================================
   sqliteExperiments <- reactive({
     experimentsTrigger()
-    experiments <- readTableFromSqlite("experiments", sqlite_db_path)
+    experiments <- readTableFromSqlite("designplot_experiments", sqlite_db_path)
     stripExperimentTsCols <- function(df) {
       if (!is.data.frame(df)) return(df)
       drop_ts <- intersect(c("created_at", "updated_at"), names(df))
@@ -1584,7 +1584,7 @@ buildDesignplotServer <- function(input, output) {
 
   sqliteExperimentRecords <- reactive({
     recordsTrigger()
-    records <- readTableFromSqlite("experiment_records", sqlite_db_path)
+    records <- readTableFromSqlite("designplot_experiment_records", sqlite_db_path)
     if (!is.data.frame(records) || nrow(records) == 0) return(records)
     filter_id <- trimws(input$sqliteFilterExperimentId)
     if (nzchar(filter_id) && "experiment_id" %in% names(records)) {
@@ -1638,7 +1638,7 @@ buildDesignplotServer <- function(input, output) {
   output$experimentSeedRecords <- DT::renderDataTable(DT::datatable(experimentSeedData(), options = list(pageLength = 20, scrollX = TRUE)))
   sqliteExperimentsForExport <- reactive({
     experimentsTrigger()
-    experiments <- readTableFromSqlite("experiments", sqlite_db_path)
+    experiments <- readTableFromSqlite("designplot_experiments", sqlite_db_path)
     if (!is.data.frame(experiments) || nrow(experiments) == 0) return(experiments)
     filter_id <- trimws(input$sqliteFilterExperimentId)
     if (nzchar(filter_id) && "experiment_id" %in% names(experiments)) {
