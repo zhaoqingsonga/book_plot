@@ -1158,6 +1158,14 @@ initDesignplotTables <- function(con) {
   # 索引
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dp_exp_id ON designplot_experiment_records(experiment_id)")
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dp_exp_name ON designplot_experiments(experiment_name)")
+
+  # 迁移：为已有表添加 source_type 和 source_id 列（如果不存在）
+  tryCatch({
+    DBI::dbExecute(con, "ALTER TABLE designplot_experiments ADD COLUMN source_type TEXT CHECK(source_type IN ('population', 'line_selection', 'yield_test'))")
+  }, error = function(e) {})
+  tryCatch({
+    DBI::dbExecute(con, "ALTER TABLE designplot_experiments ADD COLUMN source_id TEXT")
+  }, error = function(e) {})
 }
 
 # ---- 从试验管理导入单个试验 ----

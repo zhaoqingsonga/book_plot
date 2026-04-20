@@ -11,8 +11,8 @@ library(shinyjs)
 library(DT)
 library(dplyr)
 library(openxlsx)
-library(soyplant)
 library(ggplot2)
+library(soyplant)
 
 # 加载辅助函数
 source("shared/helpers.R")
