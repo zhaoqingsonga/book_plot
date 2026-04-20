@@ -1,5 +1,12 @@
 buildDesignplotUI <- function(){
   fluidPage(
+    tags$head(
+      tags$style(HTML("
+        .btn-primary:disabled { background-color: #3b82f6 !important; border-color: #3b82f6 !important; opacity: 0.7 !important; }
+        .btn-warning:disabled  { background-color: #f59e0b !important; border-color: #f59e0b !important; opacity: 0.7 !important; }
+        .btn-default:disabled  { background-color: #9ca3af !important; border-color: #9ca3af !important; opacity: 0.7 !important; }
+      "))
+    ),
     navbarPage("田间设计",
                tabPanel("田间规划",
                         sidebarLayout(
@@ -81,80 +88,84 @@ buildDesignplotUI <- function(){
                         )
                ),
                tabPanel("种植试验",
-                        uiOutput("experimentStatusSummaryUi"),
-                        tags$div(
-                          style = "background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;margin-bottom:14px;color:#1e3a5f;font-size:13px;line-height:1.55;",
-                          tags$strong("建议顺序："),
-                          "选种植地块 → 选试验与种植范围 → 执行种植 →（可选）区域补种"
-                        ),
                         fluidRow(
-                          column(12,
-                            tags$div(
-                              style = "background:#ffffff;border:1px solid #dbe4ee;border-left:4px solid #10b981;border-radius:10px;padding:12px;margin-bottom:12px;box-shadow:0 2px 8px rgba(15,23,42,0.06);",
-                              fluidRow(
-                                column(1, tags$span("1", style = "background:#10b981;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
-                                column(11, tags$span("种植配置（先选地块，再选试验与范围）", style = "font-size:15px;font-weight:600;color:#1f2937;margin-left:6px;"))
-                              ),
-                              tags$div(style = "height:4px;"),
-                              selectInput("experimentPlantTableSelect", "选择种植地块", choices = c("暂无地块" = ""), selected = ""),
-                              selectInput("sqliteFilterExperimentId", "选择试验", choices = c("全部试验" = ""), selected = "", width = "100%"),
-                              textInput("experimentPlantStartPos", "种植起始位置（排,行）", value = "1,1", placeholder = "示例：1,1 / 1, / ,3 / 1"),
-                              textInput("experimentPlantEndPos", "种植终止位置（排,行；留空=最后）", value = "", placeholder = "示例：10,8 / 10, / ,8 / 10"),
-                              uiOutput("experimentPlantSummaryUi")
-                            )
-                          )
-                        ),
-                        fluidRow(
-                          column(12,
-                            tags$div(
-                              style = "background:#ffffff;border:1px solid #dbe4ee;border-left:4px solid #2563eb;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 2px 8px rgba(15,23,42,0.06);",
-                              fluidRow(
-                                column(1, tags$span("2", style = "background:#2563eb;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
-                                column(11, tags$span("执行种植", style = "font-size:16px;font-weight:600;color:#1f2937;margin-left:6px;"))
-                              ),
-                              tags$div(style = "height:8px;"),
-                              checkboxInput("allowExperimentReplant", "允许覆盖重种（默认关闭）", value = FALSE),
-                              tags$p("默认会阻止同一 experiment_id 在同一地块重复种植，避免误操作。", style = "margin:0 0 8px 0;color:#6b7280;font-size:12px;line-height:1.6;"),
-                              uiOutput("runExperimentPlantingUi"),
-                              tags$div(style = "height:8px;"),
-                              tags$p("最近两次「执行试验种植」可在下方撤销（仅本会话有效，刷新页面后记录清空）。", style = "margin:0 0 6px 0;color:#6b7280;font-size:12px;line-height:1.55;"),
-                              uiOutput("undoExperimentPlantingUi")
-                            )
-                          )
-                        ),
-                        fluidRow(
-                          column(12,
-                            tags$div(
-                              style = "background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:10px;padding:12px;margin-bottom:12px;",
-                              fluidRow(
-                                column(1, tags$span("3", style = "background:#f59e0b;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;")),
-                                column(11, tags$span("区域补种（可选）", style = "font-size:15px;font-weight:600;color:#1f2937;margin-left:6px;"))
-                              ),
-                              tags$div(style = "height:4px;"),
-                              textInput("experimentFillMaterial", "区域补种材料（仅填未种位）", value = "", placeholder = "示例：补种材料A"),
-                              uiOutput("experimentFillSummaryUi"),
-                              actionButton("runExperimentFillUnplanted", "执行区域补种（仅未种）", class = "btn-warning", width = "100%")
-                            )
-                          )
-                        ),
-                        fluidRow(
+                          # ========== 左侧配置栏（6列）==========
                           column(6,
+                            # 状态摘要（最上方）
+                            uiOutput("experimentStatusSummaryUi"),
                             tags$div(
-                              style = "background:#ffffff;border:1px solid #dbe4ee;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 2px 8px rgba(15,23,42,0.06);",
-                              fluidRow(
-                                column(12, tags$span("试验名称表", style = "font-size:16px;font-weight:600;color:#1f2937;"))
+                              style = "background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:6px 10px;margin-bottom:8px;color:#1e3a5f;font-size:12px;line-height:1.5;",
+                              tags$strong("建议："), "选地块 → 选试验 → 执行种植 →（可选）补种"
+                            ),
+                            # 1 种植配置（左）| 2 执行种植+3 区域补种（右，堆叠）
+                            fluidRow(
+                              column(6,
+                                tags$div(
+                                  style = "background:#ffffff;border:1px solid #dbe4ee;border-left:3px solid #10b981;border-radius:8px;padding:10px;margin-bottom:8px;box-shadow:0 1px 4px rgba(15,23,42,0.06);",
+                                  fluidRow(
+                                    column(1, tags$span("1", style = "background:#10b981;color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;")),
+                                    column(11, tags$span("种植配置", style = "font-size:13px;font-weight:600;color:#1f2937;margin-left:4px;"))
+                                  ),
+                                  tags$div(style = "height:6px;"),
+                                  selectInput("experimentPlantTableSelect", "种植地块", choices = c("暂无地块" = ""), selected = ""),
+                                  selectInput("sqliteFilterExperimentId", "选择试验", choices = c("全部试验" = ""), selected = "", width = "100%"),
+                                  textInput("experimentPlantStartPos", "起始位置(排,行)", value = "1,1", placeholder = "如 1,1 / 1, / ,3"),
+                                  textInput("experimentPlantEndPos", "终止位置(排,行)", value = "", placeholder = "留空=最后"),
+                                  uiOutput("experimentPlantSummaryUi")
+                                )
                               ),
-                              tags$div(style = "height:4px;"),
-                              DT::dataTableOutput("sqliteExperiments"),
-                              downloadButton("downloadExperimentsCsv", "下载试验名称表（csv）")
-                            )
+                              column(6,
+                                # Panel 2: 执行种植
+                                tags$div(
+                                  style = "background:#ffffff;border:1px solid #dbe4ee;border-left:3px solid #2563eb;border-radius:8px;padding:10px;margin-bottom:8px;box-shadow:0 1px 4px rgba(15,23,42,0.06);",
+                                  fluidRow(
+                                    column(1, tags$span("2", style = "background:#2563eb;color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;")),
+                                    column(11, tags$span("执行种植", style = "font-size:13px;font-weight:600;color:#1f2937;margin-left:4px;"))
+                                  ),
+                                  tags$div(style = "height:6px;"),
+                                  checkboxInput("allowExperimentReplant", "允许覆盖重种", value = FALSE),
+                                  tags$p("阻止重复种植，避免误操作。", style = "margin:0 0 6px 0;color:#6b7280;font-size:11px;"),
+                                  uiOutput("runExperimentPlantingUi"),
+                                  tags$div(style = "height:4px;"),
+                                  tags$p("撤销（仅本会话）", style = "margin:0 0 4px 0;color:#6b7280;font-size:11px;"),
+                                  uiOutput("undoExperimentPlantingUi")
+                                ),
+                                # Panel 3: 区域补种（堆叠在Panel 2下方）
+                                tags$div(
+                                  style = "background:#fffbeb;border:1px solid #fcd34d;border-left:3px solid #f59e0b;border-radius:8px;padding:10px;",
+                                  fluidRow(
+                                    column(1, tags$span("3", style = "background:#f59e0b;color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;")),
+                                    column(11, tags$span("区域补种（可选）", style = "font-size:13px;font-weight:600;color:#1f2937;margin-left:4px;"))
+                                  ),
+                                  tags$div(style = "height:6px;"),
+                                  textInput("experimentFillMaterial", "补种材料", value = "", placeholder = "示例：补种材料A"),
+                                  uiOutput("experimentFillSummaryUi"),
+                                  actionButton("runExperimentFillUnplanted", "执行补种", class = "btn-warning btn-sm", width = "100%")
+                                )
+                              )
+                            ),
                           ),
+                          # ========== 右侧数据栏（6列）==========
                           column(6,
+                            # 试验名称表
                             tags$div(
-                              style = "background:#ffffff;border:1px solid #dbe4ee;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 2px 8px rgba(15,23,42,0.06);",
-                              h4("试验记录表", style = "margin-top:0;margin-bottom:10px;"),
-                              DT::dataTableOutput("sqliteExperimentRecords"),
-                              downloadButton("downloadExperimentRecordsCsv", "下载试验记录表（csv）")
+                              style = "background:#ffffff;border:1px solid #dbe4ee;border-radius:10px;padding:12px;margin-bottom:10px;box-shadow:0 1px 4px rgba(15,23,42,0.06);",
+                              fluidRow(
+                                column(6, tags$span("试验名称表", style = "font-size:14px;font-weight:600;color:#1f2937;")),
+                                column(6, tags$div(style = "text-align:right;", downloadButton("downloadExperimentsCsv", "下载csv", class = "btn-xs")))
+                              ),
+                              tags$div(style = "height:4px;"),
+                              DT::dataTableOutput("sqliteExperiments")
+                            ),
+                            # 试验记录表
+                            tags$div(
+                              style = "background:#ffffff;border:1px solid #dbe4ee;border-radius:10px;padding:12px;box-shadow:0 1px 4px rgba(15,23,42,0.06);",
+                              fluidRow(
+                                column(6, tags$span("试验记录表", style = "font-size:14px;font-weight:600;color:#1f2937;")),
+                                column(6, tags$div(style = "text-align:right;", downloadButton("downloadExperimentRecordsCsv", "下载csv", class = "btn-xs")))
+                              ),
+                              tags$div(style = "height:4px;"),
+                              DT::dataTableOutput("sqliteExperimentRecords")
                             )
                           )
                         )

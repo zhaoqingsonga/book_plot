@@ -1203,14 +1203,14 @@ buildDesignplotServer <- function(input, output) {
 
   output$runExperimentPlantingUi <- renderUI({
     if (isTRUE(isPlantingInProgress())) {
-      actionButton("runExperimentPlanting", "执行中...", class = "btn-default", width = "100%", disabled = "disabled")
+      actionButton("runExperimentPlanting", "执行中...", class = "btn-primary", width = "100%", disabled = "disabled")
     } else {
       state <- tryCatch(experimentPlantValidation(), error = function(e) NULL)
       req(state)
       if (isTRUE(state$runnable)) {
         actionButton("runExperimentPlanting", "执行试验种植", class = "btn-primary", width = "100%")
       } else {
-        actionButton("runExperimentPlanting", "执行试验种植（先选试验或修正设置）", class = "btn-default", width = "100%", disabled = "disabled")
+        actionButton("runExperimentPlanting", "执行试验种植（先选试验或修正设置）", class = "btn-primary", width = "100%", disabled = "disabled")
       }
     }
   })
@@ -1607,9 +1607,26 @@ buildDesignplotServer <- function(input, output) {
   })
 
   output$sqliteExperiments <- DT::renderDataTable(
-    DT::datatable(sqliteExperiments(), options = list(pageLength = 20, scrollX = TRUE), escape = FALSE)
+    DT::datatable(sqliteExperiments(), options = list(pageLength = 5, scrollX = TRUE), escape = FALSE,
+                  selection = list(mode = "single", target = "row", selected = NULL))
   )
-  output$sqliteExperimentRecords <- DT::renderDataTable(DT::datatable(sqliteExperimentRecords(), options = list(pageLength = 10, scrollX = TRUE)))
+
+  # ---- 点击试验名称表某行 → 同步下拉框 + 刷新右侧记录表 ----
+  observeEvent(input$sqliteExperiments_rows_selected, {
+    sel_row <- input$sqliteExperiments_rows_selected
+    if (is.null(sel_row) || length(sel_row) == 0) return()
+    all_exp <- sqliteExperiments()
+    row_idx <- sel_row[1]
+    if (row_idx < 1 || row_idx > nrow(all_exp)) return()
+    exp_id <- as.character(all_exp$experiment_id[row_idx])
+    if (!nzchar(exp_id)) return()
+    updateSelectInput(session = getDefaultReactiveDomain(), inputId = "sqliteFilterExperimentId", selected = exp_id)
+    recordsTrigger(sum(recordsTrigger(), 1))
+  })
+
+  output$sqliteExperimentRecords <- DT::renderDataTable(
+    DT::datatable(sqliteExperimentRecords(), options = list(pageLength = 5, scrollX = TRUE))
+  )
   output$downloadExperimentsCsv <- downloadHandler(filename = function() { "experiments.csv" },
                                                     content = function(file) { write.csv(sqliteExperimentsForExport(), file, row.names = FALSE, fileEncoding = "UTF-8") })
   output$downloadExperimentRecordsCsv <- downloadHandler(filename = function() { "experiment_records.csv" },
