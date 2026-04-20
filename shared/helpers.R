@@ -73,6 +73,94 @@ getSheetNames <- function(file) {
   return(sheets)
 }
 
+# 通用 Excel 导出：兼容 designplot 下载处理器当前调用签名
+# @param data 可为 matrix / data.frame
+# @param file 输出文件路径
+# @param ref_data 可选参考矩阵，用于按参考值高亮未种地块
+# @param highlight_positive 是否高亮正数单元格
+# @param color_planted 是否高亮包含“|”的已种单元格
+writeFormattedXlsx <- function(data, file, ref_data = NULL, highlight_positive = FALSE, color_planted = TRUE) {
+  if (is.null(data)) stop("导出数据为空")
+
+  out_df <- if (is.matrix(data)) {
+    as.data.frame(data, stringsAsFactors = FALSE, check.names = FALSE)
+  } else if (is.data.frame(data)) {
+    data
+  } else {
+    as.data.frame(data, stringsAsFactors = FALSE, check.names = FALSE)
+  }
+
+  wb <- openxlsx::createWorkbook()
+  openxlsx::addWorksheet(wb, "Sheet1")
+  openxlsx::writeData(wb, "Sheet1", out_df, rowNames = FALSE)
+
+  style_header <- openxlsx::createStyle(textDecoration = "bold", fgFill = "#D9EAF7", halign = "center")
+  style_positive <- openxlsx::createStyle(fgFill = "#FFF59D")
+  style_planted <- openxlsx::createStyle(fgFill = "#C8E6C9")
+  style_unplanted <- openxlsx::createStyle(fgFill = "#F3F4F6")
+
+  openxlsx::addStyle(
+    wb,
+    "Sheet1",
+    style = style_header,
+    rows = 1,
+    cols = seq_len(ncol(out_df)),
+    gridExpand = TRUE,
+    stack = TRUE
+  )
+
+  n_rows <- nrow(out_df)
+  n_cols <- ncol(out_df)
+  if (n_rows > 0 && n_cols > 0) {
+    ref_matrix <- if (!is.null(ref_data)) {
+      if (is.matrix(ref_data)) ref_data else as.matrix(ref_data)
+    } else {
+      NULL
+    }
+
+    for (row_idx in seq_len(n_rows)) {
+      for (col_idx in seq_len(n_cols)) {
+        cell_value <- out_df[[col_idx]][row_idx]
+        target_row <- row_idx + 1L
+        style_to_apply <- NULL
+
+        if (isTRUE(color_planted) && grepl("\\|", as.character(cell_value))) {
+          style_to_apply <- style_planted
+        } else if (isTRUE(highlight_positive)) {
+          numeric_value <- suppressWarnings(as.numeric(cell_value))
+          if (!is.na(numeric_value) && numeric_value > 0) {
+            style_to_apply <- style_positive
+          }
+        } else if (!is.null(ref_matrix) &&
+                   row_idx <= nrow(ref_matrix) &&
+                   col_idx <= ncol(ref_matrix)) {
+          ref_numeric <- suppressWarnings(as.numeric(ref_matrix[row_idx, col_idx]))
+          value_numeric <- suppressWarnings(as.numeric(cell_value))
+          if (!is.na(ref_numeric) && ref_numeric > 0 && !grepl("\\|", as.character(cell_value))) {
+            if (!is.na(value_numeric) && value_numeric > 0) {
+              style_to_apply <- style_unplanted
+            }
+          }
+        }
+
+        if (!is.null(style_to_apply)) {
+          openxlsx::addStyle(
+            wb,
+            "Sheet1",
+            style = style_to_apply,
+            rows = target_row,
+            cols = col_idx,
+            gridExpand = FALSE,
+            stack = TRUE
+          )
+        }
+      }
+    }
+  }
+
+  openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
+}
+
 # Convert rows to line numbers
 rows_to_linenumber <- function(rows) {
   result <- character(length(rows))

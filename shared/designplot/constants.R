@@ -52,11 +52,11 @@ buildExcelStyles<-function(style_builder){
 }
 
 # Excel条件格式样式（bgFill用于conditionalFormatting）
-EXCEL_COND_STYLES <- buildExcelStyles(function(color_hex) createStyle(bgFill = color_hex))
+EXCEL_COND_STYLES <- buildExcelStyles(function(color_hex) openxlsx::createStyle(bgFill = color_hex))
 
 # 统一创建单元格填充样式：同时设置 fgFill/bgFill，提升不同Excel客户端兼容性
 createCellFillStyle<-function(color_hex){
-  createStyle(fgFill=color_hex, bgFill=color_hex)
+  openxlsx::createStyle(fgFill=color_hex, bgFill=color_hex)
 }
 
 # Excel直接着色样式（fgFill用于addStyle）
