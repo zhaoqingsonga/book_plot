@@ -670,9 +670,9 @@ experiments_server <- function(id) {
 
     # --- 重置 ---
     observeEvent(input$btn_reset, {
-      updateSelectInput(session, "filter_year", selected = "")
+      updateSelectInput(session, "filter_year", selected = as.character(Sys.Date()[[1]]))
       updateSelectInput(session, "filter_type", selected = "")
-      updateSelectInput(session, "filter_location", selected = "")
+      updateSelectInput(session, "filter_location", selected = "安徽宿州")
       updateTextInput(session, "filter_search", value = "")
       selected_experiment(NULL)
       session$sendCustomMessage("toggle_delete_btn", list(show = FALSE))

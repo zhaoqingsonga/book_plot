@@ -68,14 +68,14 @@ ui <- navbarPage(
 
   # === 3. 产比记录本 ===
   tabPanel("产比记录本",
-    icon = icon("chart-bar"),
+    icon = icon("balance-scale"),
     yield_test_ui("yield_mod")
   ),
 
   # === 4. 试验管理 ===
   tabPanel(
     "试验管理",
-    icon = icon("flask"),
+    icon = icon("clipboard-list"),
     experiments_ui("exp_mod")
   ),
 
