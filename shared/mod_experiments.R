@@ -162,6 +162,141 @@ experiments_server <- function(id) {
       year
     }
 
+    split_place_values <- function(x) {
+      if (is.null(x) || length(x) == 0) {
+        return(character(0))
+      }
+
+      values <- unlist(strsplit(as.character(x), ",", fixed = TRUE), use.names = FALSE)
+      values <- trimws(values)
+      unique(values[nzchar(values)])
+    }
+
+    place_matches_filter <- function(place_value, location_filter) {
+      if (is.null(location_filter) || !nzchar(trimws(location_filter))) {
+        return(TRUE)
+      }
+
+      location_filter <- trimws(location_filter)
+      if (is.null(place_value) || length(place_value) == 0 || is.na(place_value)) {
+        return(FALSE)
+      }
+
+      location_filter %in% split_place_values(place_value)
+    }
+
+    summarize_import_overwrite <- function(experiment_ids, location_filter = NULL) {
+      exp_ids <- trimws(as.character(experiment_ids))
+      exp_ids <- exp_ids[nzchar(exp_ids)]
+      if (length(exp_ids) == 0) {
+        return(list(items = list(), overwrite_count = 0L, planted_count = 0L))
+      }
+
+      items <- lapply(exp_ids, function(exp_id) {
+        dp_id <- paste0("DP_", exp_id)
+        existed <- tryCatch(designplotExperimentExists(dp_id, db_path()), error = function(e) FALSE)
+        plant_runs <- if (existed) {
+          tryCatch(getExperimentPlantRuns(dp_id, db_path()), error = function(e) data.frame())
+        } else {
+          data.frame()
+        }
+        if (!is.data.frame(plant_runs)) plant_runs <- data.frame()
+        planted_tables <- if (nrow(plant_runs) > 0 && "plant_table_name" %in% names(plant_runs)) {
+          unique(trimws(as.character(plant_runs$plant_table_name)))
+        } else {
+          character(0)
+        }
+        planted_tables <- planted_tables[nzchar(planted_tables)]
+
+        list(
+          source_experiment_id = exp_id,
+          designplot_experiment_id = dp_id,
+          exists = existed,
+          planted = length(planted_tables) > 0,
+          planted_tables = planted_tables,
+          location_filter = location_filter %||% ""
+        )
+      })
+
+      overwrite_count <- sum(vapply(items, function(item) isTRUE(item$exists), logical(1)))
+      planted_count <- sum(vapply(items, function(item) isTRUE(item$planted), logical(1)))
+      list(items = items, overwrite_count = overwrite_count, planted_count = planted_count)
+    }
+
+    build_import_warning_ui <- function(summary_info, batch = FALSE) {
+      items <- summary_info$items %||% list()
+      overwrite_items <- Filter(function(item) isTRUE(item$exists), items)
+      planted_items <- Filter(function(item) isTRUE(item$planted), overwrite_items)
+      location_values <- unique(trimws(vapply(items, function(item) item$location_filter %||% "", character(1))))
+      location_values <- location_values[nzchar(location_values)]
+
+      tagList(
+        tags$p(
+          if (batch) {
+            "检测到本次导入包含已存在的种植试验记录；继续后会覆盖原试验。"
+          } else {
+            "检测到当前试验已存在于种植试验中；继续后会覆盖原试验。"
+          },
+          style = "margin-bottom:8px;font-weight:600;color:#92400e;"
+        ),
+        if (length(location_values) > 0) {
+          tags$p(sprintf("当前按地点过滤：%s", paste(location_values, collapse = ", ")),
+                 style = "margin-bottom:8px;color:#6b7280;")
+        },
+        if (length(overwrite_items) > 0) {
+          tags$div(
+            tags$strong(sprintf("将覆盖 %d 个试验：", length(overwrite_items))),
+            tags$ul(
+              lapply(overwrite_items, function(item) {
+                tags$li(
+                  sprintf("%s → %s", item$source_experiment_id, item$designplot_experiment_id),
+                  if (isTRUE(item$planted)) {
+                    tags$span(
+                      sprintf("（已种植地块：%s）", paste(item$planted_tables, collapse = ", ")),
+                      style = "color:#b91c1c;"
+                    )
+                  }
+                )
+              })
+            )
+          )
+        },
+        if (length(planted_items) > 0) {
+          tags$p(
+            "这些试验原来已经种过。覆盖导入后会自动重置为“未种植”，并清掉相关种植运行记录；如需继续使用，必须重新生成所种地块。",
+            style = "margin:8px 0 0 0;color:#b91c1c;font-weight:600;line-height:1.6;"
+          )
+        } else {
+          tags$p(
+            "继续后会覆盖原试验记录。若后续需要种植，请重新执行种植生成。",
+            style = "margin:8px 0 0 0;color:#6b7280;line-height:1.6;"
+          )
+        }
+      )
+    }
+
+    perform_single_import <- function(exp, location_filter = NULL) {
+      result <- importExperimentToDesignplot(
+        source_experiment_id = exp$experiment_id,
+        source_type = exp$experiment_type,
+        location_filter = location_filter,
+        db_path = db_path()
+      )
+
+      if (isTRUE(result$success)) {
+        showNotification(result$message, type = "message", duration = 8)
+      } else {
+        showNotification(result$message, type = "error")
+      }
+      invisible(result)
+    }
+
+    perform_batch_import <- function(location_filter = NULL) {
+      result <- importAllExperimentsToDesignplot(location_filter = location_filter, db_path = db_path())
+      showNotification(result$message, type = "message", duration = 8)
+      invisible(result)
+    }
+
     load_experiments <- reactive({
       req(refresh_version())
       con <- connectDb(db_path())
@@ -187,7 +322,11 @@ experiments_server <- function(id) {
           "SELECT r.experiment_id, r.experiment_name, r.total_rows, r.has_generated,
                   r.generated_at, r.created_at, r.experiment_id as fieldid,
                   '%s' as experiment_type,
-                  (SELECT f.place FROM %s f WHERE f.experiment_id = r.experiment_id LIMIT 1) as place
+                  (SELECT GROUP_CONCAT(DISTINCT TRIM(f.place))
+                   FROM %s f
+                   WHERE f.experiment_id = r.experiment_id
+                     AND f.place IS NOT NULL
+                     AND TRIM(f.place) != '') as place
            FROM %s r
            WHERE r.has_generated = 1",
           t, field_tbl, rec_tbl
@@ -242,8 +381,7 @@ experiments_server <- function(id) {
       )
 
       # 更新地点下拉框
-      all_locs <- sort(unique(stats::na.omit(load_experiments()$place)))
-      all_locs <- all_locs[nzchar(all_locs)]
+      all_locs <- sort(unique(split_place_values(load_experiments()$place)))
       selected_loc <- isolate(input$filter_location)
       selected_loc <- if (!is.null(selected_loc) && selected_loc %in% all_locs) selected_loc else ""
 
@@ -267,7 +405,8 @@ experiments_server <- function(id) {
       }
 
       if (!is.null(loc_val) && nzchar(loc_val)) {
-        combined <- combined[combined$place == loc_val, , drop = FALSE]
+        matches <- vapply(combined$place, place_matches_filter, logical(1), location_filter = loc_val)
+        combined <- combined[matches, , drop = FALSE]
       }
 
       # 搜索筛选
@@ -321,6 +460,7 @@ experiments_server <- function(id) {
           row <- group_exps[i, ]
           is_selected <- !is.null(selected_experiment()) &&
                          selected_experiment()$experiment_id == row$experiment_id
+          place_values <- split_place_values(row$place)
 
           btn_class <- if (is_selected) "exp-item selected" else "exp-item"
 
@@ -331,7 +471,20 @@ experiments_server <- function(id) {
             ),
             div(class = "exp-item-meta",
               sprintf("ID: %s | 行数: %.0f", row$experiment_id, row$total_rows %||% 0)
-            )
+            ),
+            if (length(place_values) > 0) {
+              div(class = "exp-item-locations",
+                span(class = "exp-location-label", "地点"),
+                lapply(place_values, function(place) {
+                  span(class = "exp-location-tag", place)
+                })
+              )
+            } else {
+              div(class = "exp-item-locations is-empty",
+                span(class = "exp-location-label", "地点"),
+                span(class = "exp-location-empty", "未设置")
+              )
+            }
           )
         })
 
@@ -688,17 +841,40 @@ experiments_server <- function(id) {
       }
 
       tryCatch({
-        result <- importExperimentToDesignplot(
-          source_experiment_id = exp$experiment_id,
-          source_type = exp$experiment_type,
-          db_path = db_path()
-        )
-
-        if (result$success) {
-          showNotification(result$message, type = "message")
+        loc_filter <- input$filter_location
+        loc_filter <- if (is.null(loc_filter) || !nzchar(trimws(loc_filter))) NULL else trimws(loc_filter)
+        summary_info <- summarize_import_overwrite(exp$experiment_id, loc_filter)
+        if (summary_info$overwrite_count > 0) {
+          showModal(modalDialog(
+            title = tagList(icon("exclamation-triangle"), "确认覆盖导入"),
+            build_import_warning_ui(summary_info, batch = FALSE),
+            easyClose = TRUE,
+            footer = tagList(
+              modalButton("取消"),
+              actionButton(ns("confirm_import_to_designplot"), "继续覆盖导入", class = "btn-warning")
+            )
+          ))
         } else {
-          showNotification(result$message, type = "error")
+          perform_single_import(exp, loc_filter)
         }
+      }, error = function(e) {
+        showNotification(paste("导入失败:", e$message), type = "error")
+      })
+    })
+
+    observeEvent(input$confirm_import_to_designplot, {
+      exp <- selected_experiment()
+      if (is.null(exp) || is.null(exp$experiment_id)) {
+        removeModal()
+        showNotification("请先从左侧选择一个试验", type = "warning")
+        return()
+      }
+
+      tryCatch({
+        removeModal()
+        loc_filter <- input$filter_location
+        loc_filter <- if (is.null(loc_filter) || !nzchar(trimws(loc_filter))) NULL else trimws(loc_filter)
+        perform_single_import(exp, loc_filter)
       }, error = function(e) {
         showNotification(paste("导入失败:", e$message), type = "error")
       })
@@ -708,9 +884,34 @@ experiments_server <- function(id) {
     observeEvent(input$btn_import_all_to_designplot, {
       tryCatch({
         loc_filter <- input$filter_location
-        loc_filter <- if (is.null(loc_filter) || !nzchar(loc_filter)) NULL else loc_filter
-        result <- importAllExperimentsToDesignplot(location_filter = loc_filter, db_path = db_path())
-        showNotification(result$message, type = "message")
+        loc_filter <- if (is.null(loc_filter) || !nzchar(trimws(loc_filter))) NULL else trimws(loc_filter)
+
+        target_ids <- experiments_list()$experiment_id %||% character(0)
+        summary_info <- summarize_import_overwrite(target_ids, loc_filter)
+        if (summary_info$overwrite_count > 0) {
+          showModal(modalDialog(
+            title = tagList(icon("exclamation-triangle"), "确认批量覆盖导入"),
+            build_import_warning_ui(summary_info, batch = TRUE),
+            easyClose = TRUE,
+            footer = tagList(
+              modalButton("取消"),
+              actionButton(ns("confirm_import_all_to_designplot"), "继续批量覆盖导入", class = "btn-warning")
+            )
+          ))
+        } else {
+          perform_batch_import(loc_filter)
+        }
+      }, error = function(e) {
+        showNotification(paste("批量导入失败:", e$message), type = "error")
+      })
+    })
+
+    observeEvent(input$confirm_import_all_to_designplot, {
+      tryCatch({
+        removeModal()
+        loc_filter <- input$filter_location
+        loc_filter <- if (is.null(loc_filter) || !nzchar(trimws(loc_filter))) NULL else trimws(loc_filter)
+        perform_batch_import(loc_filter)
       }, error = function(e) {
         showNotification(paste("批量导入失败:", e$message), type = "error")
       })

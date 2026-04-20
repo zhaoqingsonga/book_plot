@@ -452,6 +452,152 @@ getPlantedTablesForExperiment <- function(experiment_id, db_path = defaultSqlite
   if (is.data.frame(df) && nrow(df) > 0) df$plant_table_name else character(0)
 }
 
+getExperimentPlantRuns <- function(experiment_id, db_path = defaultSqlitePath()) {
+  exp_id <- trimws(as.character(experiment_id))
+  if (!nzchar(exp_id)) return(data.frame())
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+  runs <- DBI::dbGetQuery(con,
+    "SELECT experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at
+     FROM experiment_plant_runs WHERE experiment_id = ? ORDER BY plant_table_name",
+    params = list(exp_id))
+  if (!is.data.frame(runs)) data.frame() else runs
+}
+
+designplotExperimentExists <- function(experiment_id, db_path = defaultSqlitePath()) {
+  exp_id <- trimws(as.character(experiment_id))
+  if (!nzchar(exp_id)) return(FALSE)
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+  existed <- DBI::dbGetQuery(con,
+    "SELECT 1 AS hit FROM designplot_experiments WHERE experiment_id = ? LIMIT 1",
+    params = list(exp_id))
+  is.data.frame(existed) && nrow(existed) > 0
+}
+
+resetImportedDesignplotExperiment <- function(experiment_id, db_path = defaultSqlitePath()) {
+  exp_id <- trimws(as.character(experiment_id))
+  if (!nzchar(exp_id)) {
+    return(invisible(list(reset = FALSE, runs_cleared = 0L, field_count = 0L, message = "")))
+  }
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  runs <- tryCatch(
+    DBI::dbGetQuery(con,
+      "SELECT experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at
+       FROM experiment_plant_runs WHERE experiment_id = ? ORDER BY plant_table_name",
+      params = list(exp_id)),
+    error = function(e) data.frame())
+  if (!is.data.frame(runs)) runs <- data.frame()
+
+  reset_fields <- character(0)
+  plan_ids_cleared <- character(0)
+  run_count <- 0L
+  now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+
+  DBI::dbWithTransaction(con, {
+    if (nrow(runs) > 0) {
+      for (i in seq_len(nrow(runs))) {
+        plant_table_name <- trimws(as.character(runs$plant_table_name[i]))
+        plan_id <- trimws(as.character(runs$plan_id[i]))
+        if (!nzchar(plant_table_name)) next
+
+        tables <- DBI::dbListTables(con)
+        if (!(plant_table_name %in% tables)) {
+          DBI::dbExecute(con,
+            "DELETE FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
+            params = list(exp_id, plant_table_name))
+          run_count <- run_count + 1L
+          next
+        }
+
+        plant_df <- DBI::dbReadTable(con, DBI::Id(table = plant_table_name))
+        row_index_col <- names(plant_df)[tolower(names(plant_df)) %in% c("row_index", "__row_index", "x__row_index")]
+        if (length(row_index_col) > 0) {
+          idx_col <- row_index_col[1]
+          plant_df <- plant_df[order(suppressWarnings(as.numeric(plant_df[[idx_col]]))), , drop = FALSE]
+          plant_df <- plant_df[, setdiff(names(plant_df), idx_col), drop = FALSE]
+        }
+        plant_matrix <- as.matrix(plant_df)
+
+        if (nzchar(plan_id)) {
+          assignments <- tryCatch(
+            DBI::dbGetQuery(con,
+              "SELECT seq_no, field_row_no, field_col_no FROM plant_assignments WHERE plan_id = ? ORDER BY assignment_id",
+              params = list(plan_id)),
+            error = function(e) data.frame())
+          if (!is.data.frame(assignments)) assignments <- data.frame()
+
+          rowno_idx <- match("排数", colnames(plant_matrix))
+          if (nrow(assignments) > 0 && !is.na(rowno_idx)) {
+            rowno_vec <- suppressWarnings(as.numeric(plant_matrix[, rowno_idx]))
+            for (j in seq_len(nrow(assignments))) {
+              seq_no <- suppressWarnings(as.integer(assignments$seq_no[j]))
+              field_row_no <- suppressWarnings(as.numeric(assignments$field_row_no[j]))
+              field_col_no <- suppressWarnings(as.integer(assignments$field_col_no[j]))
+              if (is.na(seq_no) || seq_no <= 0 || is.na(field_row_no) || is.na(field_col_no) || field_col_no <= 0) next
+              row_idx <- which(rowno_vec == field_row_no)
+              if (length(row_idx) == 0) next
+              if (field_col_no > ncol(plant_matrix)) next
+              plant_matrix[row_idx[1], field_col_no] <- as.character(seq_no)
+            }
+          }
+        }
+
+        field_name <- sub("\\.plant$", "", plant_table_name)
+        plant_out <- as.data.frame(plant_matrix, stringsAsFactors = FALSE)
+        plant_out$row_index <- seq_len(nrow(plant_out))
+        plant_out <- plant_out[, c("row_index", setdiff(names(plant_out), "row_index")), drop = FALSE]
+        DBI::dbWriteTable(con, DBI::Id(table = plant_table_name), plant_out, overwrite = TRUE)
+
+        sow_df <- buildSowTable(field_name = field_name, base_matrix = plant_matrix, planted_matrix = plant_matrix)
+        sow_table_name <- createSowTableName(field_name)
+        DBI::dbWriteTable(con, DBI::Id(table = sow_table_name), sow_df, overwrite = TRUE)
+        reset_fields <- c(reset_fields, plant_table_name)
+
+        if (nzchar(plan_id)) {
+          DBI::dbExecute(con, "DELETE FROM plant_assignments WHERE plan_id = ?", params = list(plan_id))
+          DBI::dbExecute(con, "DELETE FROM plan_slots WHERE plan_id = ?", params = list(plan_id))
+          DBI::dbExecute(con, "DELETE FROM plan_runs WHERE plan_id = ?", params = list(plan_id))
+          plan_ids_cleared <- c(plan_ids_cleared, plan_id)
+        }
+
+        DBI::dbExecute(con,
+          "DELETE FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
+          params = list(exp_id, plant_table_name))
+        run_count <- run_count + 1L
+      }
+    }
+
+    if ("designplot_experiments" %in% DBI::dbListTables(con)) {
+      DBI::dbExecute(con,
+        "UPDATE designplot_experiments SET has_planted = 0, updated_at = ? WHERE experiment_id = ?",
+        params = list(now, exp_id))
+    }
+  })
+
+  unique_fields <- unique(reset_fields)
+  unique_plans <- unique(plan_ids_cleared)
+  invisible(list(
+    reset = nrow(runs) > 0,
+    runs_cleared = as.integer(run_count),
+    field_count = length(unique_fields),
+    fields = unique_fields,
+    plan_count = length(unique_plans),
+    plan_ids = unique_plans,
+    message = if (nrow(runs) > 0) {
+      sprintf("已重置 %d 个种植运行，涉及 %d 个地块", run_count, length(unique_fields))
+    } else {
+      ""
+    }
+  ))
+}
+
 ensureExperimentParentExists <- function(con, experiment_id) {
   exp_id <- trimws(as.character(experiment_id))
   if (!nzchar(exp_id)) stop("experiment_id 不能为空")

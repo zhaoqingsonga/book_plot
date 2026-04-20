@@ -1175,8 +1175,10 @@ initDesignplotTables <- function(con) {
 
 # ---- 从试验管理导入单个试验 ----
 importExperimentToDesignplot <- function(source_experiment_id, source_type = c("population", "line_selection", "yield_test"),
+                                        location_filter = NULL,
                                         db_path = defaultDbPath()) {
   source_type <- match.arg(source_type)
+  source_experiment_id <- trimws(as.character(source_experiment_id))
   con <- connectDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDb(con)
@@ -1188,17 +1190,33 @@ importExperimentToDesignplot <- function(source_experiment_id, source_type = c("
     yield_test = "yield_test_field_records"
   )
 
-  records <- DBI::dbGetQuery(con,
-    sprintf("SELECT * FROM %s WHERE experiment_id = ? ORDER BY rowid", field_table),
-    params = list(source_experiment_id)
-  )
+  if (!is.null(location_filter) && nzchar(trimws(location_filter))) {
+    records <- DBI::dbGetQuery(con,
+      sprintf("SELECT * FROM %s WHERE experiment_id = ? AND TRIM(place) = ? ORDER BY rowid", field_table),
+      params = list(source_experiment_id, trimws(location_filter))
+    )
+  } else {
+    records <- DBI::dbGetQuery(con,
+      sprintf("SELECT * FROM %s WHERE experiment_id = ? ORDER BY rowid", field_table),
+      params = list(source_experiment_id)
+    )
+  }
 
   if (nrow(records) == 0) {
+    if (!is.null(location_filter) && nzchar(trimws(location_filter))) {
+      return(list(success = FALSE, message = sprintf("该试验在地点“%s”下没有可导入的田试记录", trimws(location_filter))))
+    }
     return(list(success = FALSE, message = "该试验没有田试记录，请先在对应模块生成记录本"))
   }
 
   now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   new_exp_id <- paste0("DP_", source_experiment_id)
+  overwrite_existing <- tryCatch(designplotExperimentExists(new_exp_id, db_path), error = function(e) FALSE)
+  reset_result <- if (overwrite_existing) {
+    tryCatch(resetImportedDesignplotExperiment(new_exp_id, db_path), error = function(e) stop(paste0("重置原有种植状态失败: ", e$message)))
+  } else {
+    list(reset = FALSE, runs_cleared = 0L, field_count = 0L, fields = character(0), message = "")
+  }
 
   exp_name_query <- switch(source_type,
     population = "SELECT experiment_name FROM population_records WHERE experiment_id = ?",
@@ -1240,7 +1258,26 @@ importExperimentToDesignplot <- function(source_experiment_id, source_type = c("
     source_type = source_type,
     record_count = nrow(records),
     total_rows = total_rows,
-    message = sprintf("导入成功：%s（%s），%d 条记录", exp_name, source_type, nrow(records))
+    overwritten = overwrite_existing,
+    planting_reset = isTRUE(reset_result$reset),
+    reset_fields = reset_result$fields %||% character(0),
+    message = if (!is.null(location_filter) && nzchar(trimws(location_filter))) {
+      if (overwrite_existing && isTRUE(reset_result$reset)) {
+        sprintf("已覆盖导入：%s（%s，地点：%s），%d 条记录；原种植状态已重置，请重新生成所种地块。", exp_name, source_type, trimws(location_filter), nrow(records))
+      } else if (overwrite_existing) {
+        sprintf("已覆盖导入：%s（%s，地点：%s），%d 条记录。", exp_name, source_type, trimws(location_filter), nrow(records))
+      } else {
+        sprintf("导入成功：%s（%s，地点：%s），%d 条记录", exp_name, source_type, trimws(location_filter), nrow(records))
+      }
+    } else {
+      if (overwrite_existing && isTRUE(reset_result$reset)) {
+        sprintf("已覆盖导入：%s（%s），%d 条记录；原种植状态已重置，请重新生成所种地块。", exp_name, source_type, nrow(records))
+      } else if (overwrite_existing) {
+        sprintf("已覆盖导入：%s（%s），%d 条记录。", exp_name, source_type, nrow(records))
+      } else {
+        sprintf("导入成功：%s（%s），%d 条记录", exp_name, source_type, nrow(records))
+      }
+    }
   )
 }
 
@@ -1304,7 +1341,12 @@ importAllExperimentsToDesignplot <- function(location_filter = NULL, db_path = d
     }
 
     for (exp_id in experiments$experiment_id) {
-      result <- importExperimentToDesignplot(exp_id, source_type, db_path)
+      result <- importExperimentToDesignplot(
+        source_experiment_id = exp_id,
+        source_type = source_type,
+        location_filter = location_filter,
+        db_path = db_path
+      )
       results[[length(results) + 1]] <- result
     }
   }

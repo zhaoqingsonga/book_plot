@@ -605,6 +605,41 @@ hr {
   color: #888;
 }
 
+.exp-item-locations {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.exp-location-label {
+  font-size: 0.78em;
+  font-weight: 600;
+  color: #667085;
+}
+
+.exp-location-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.12) 0%, rgba(118, 75, 162, 0.16) 100%);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  color: #4b5563;
+  font-size: 0.76em;
+  line-height: 1.2;
+}
+
+.exp-item-locations.is-empty {
+  color: #98a2b3;
+}
+
+.exp-location-empty {
+  font-size: 0.76em;
+  color: #98a2b3;
+}
+
 .stats-row {
   display: flex;
   align-items: center;
