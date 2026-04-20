@@ -66,32 +66,7 @@ yield_test_ui <- function(id) {
         )
       ),
 
-      # === 2. 维护产比记录 ===
-      tabPanel("维护记录",
-        value = "maintain",
-        icon = icon("list-alt"),
-
-        div(class = "tab-panel",
-          h3(class = "panel-title",
-            span(class = "icon", icon("list-alt")),
-            "产比试验记录"
-          ),
-          p("查看、筛选已保存的试验记录；选中后可查看详情或删除。", class = "text-muted fb-panel-intro"),
-
-          div(class = "card",
-            DT::dataTableOutput(ns("record_list"))
-          ),
-
-          div(class = "card",
-            div(class = "card-header",
-              icon("info-circle"), " 选中记录详情"
-            ),
-            DT::dataTableOutput(ns("detail_table"))
-          )
-        )
-      ),
-
-      # === 3. 生成产比记录本 ===
+      # === 2. 生成产比记录本 ===
       tabPanel("生成记录",
         value = "generate",
         icon = icon("cog"),
@@ -205,7 +180,32 @@ yield_test_ui <- function(id) {
             )
           )
         )
-      )
+      ),
+
+      # === 3. 维护产比记录 ===
+      tabPanel("维护记录",
+        value = "maintain",
+        icon = icon("list-alt"),
+
+        div(class = "tab-panel",
+          h3(class = "panel-title",
+            span(class = "icon", icon("list-alt")),
+            "产比试验记录"
+          ),
+          p("查看、筛选已保存的试验记录；选中后可查看详情或删除。", class = "text-muted fb-panel-intro"),
+
+          div(class = "card",
+            DT::dataTableOutput(ns("record_list"))
+          ),
+
+          div(class = "card",
+            div(class = "card-header",
+              icon("info-circle"), " 选中记录详情"
+            ),
+            DT::dataTableOutput(ns("detail_table"))
+          )
+        )
+      ),
     )
   )
 }

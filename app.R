@@ -103,7 +103,7 @@ ui <- navbarPage(
       ),
       hr(),
       p("依赖包: shiny, DT, dplyr, openxlsx, soyplant, DBI, RSQLite"),
-      p("开发者: zhaoqingsonga/soyplant")
+p("开发者: 赵青松"),
     )
   )
 )

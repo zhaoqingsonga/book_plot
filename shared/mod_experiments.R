@@ -24,7 +24,7 @@ experiments_ui <- function(id) {
             # 年份筛选
             selectInput(ns("filter_year"), "年份",
               choices = c("全部" = ""),
-              selected = "", width = "100%"
+              selected = as.character(Sys.Date()[[1]]), width = "100%"
             ),
 
             # 类型筛选
@@ -36,7 +36,7 @@ experiments_ui <- function(id) {
             # 地点筛选
             selectInput(ns("filter_location"), "地点",
               choices = c("全部" = ""),
-              selected = "", width = "100%"
+              selected = "安徽宿州", width = "100%"
             ),
 
             # 隐藏的点击处理器
@@ -69,8 +69,8 @@ experiments_ui <- function(id) {
 
             # 导入到种植试验按钮
             div(class = "button-group mt-3",
-              actionButton(ns("btn_import_to_designplot"), "导入到种植试验", icon = icon("upload"), class = "btn-warning btn-sm w-100"),
-              actionButton(ns("btn_import_all_to_designplot"), "导入全部", icon = icon("upload"), class = "btn-warning btn-sm w-100")
+              actionButton(ns("btn_import_to_designplot"), "导入田间种植", icon = icon("upload"), class = "btn-warning btn-sm w-50"),
+              actionButton(ns("btn_import_all_to_designplot"), "导入全部", icon = icon("upload"), class = "btn-warning btn-sm w-50")
             ),
             p("将已生成的田试记录导入到种植试验模块", class = "text-muted", style = "font-size: 11px; margin-top: 4px;")
           ),
