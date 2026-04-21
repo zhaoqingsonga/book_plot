@@ -112,48 +112,62 @@ writeFormattedXlsx <- function(data, file, ref_data = NULL, highlight_positive =
   n_rows <- nrow(out_df)
   n_cols <- ncol(out_df)
   if (n_rows > 0 && n_cols > 0) {
-    ref_matrix <- if (!is.null(ref_data)) {
-      if (is.matrix(ref_data)) ref_data else as.matrix(ref_data)
-    } else {
-      NULL
+    value_matrix <- as.matrix(out_df)
+    value_char <- matrix(as.character(value_matrix), nrow = n_rows, ncol = n_cols)
+
+    applyStyleMask <- function(mask, style) {
+      if (is.null(dim(mask))) {
+        mask <- matrix(mask, nrow = n_rows, ncol = n_cols)
+      }
+
+      positions <- which(mask, arr.ind = TRUE)
+      if (nrow(positions) == 0) {
+        return(invisible(NULL))
+      }
+
+      openxlsx::addStyle(
+        wb,
+        "Sheet1",
+        style = style,
+        rows = positions[, 1] + 1L,
+        cols = positions[, 2],
+        gridExpand = FALSE,
+        stack = TRUE
+      )
     }
 
-    for (row_idx in seq_len(n_rows)) {
-      for (col_idx in seq_len(n_cols)) {
-        cell_value <- out_df[[col_idx]][row_idx]
-        target_row <- row_idx + 1L
-        style_to_apply <- NULL
+    planted_mask <- matrix(FALSE, nrow = n_rows, ncol = n_cols)
+    if (isTRUE(color_planted)) {
+      planted_mask <- matrix(grepl("\\|", value_char), nrow = n_rows, ncol = n_cols)
+      applyStyleMask(planted_mask, style_planted)
+    }
 
-        if (isTRUE(color_planted) && grepl("\\|", as.character(cell_value))) {
-          style_to_apply <- style_planted
-        } else if (isTRUE(highlight_positive)) {
-          numeric_value <- suppressWarnings(as.numeric(cell_value))
-          if (!is.na(numeric_value) && numeric_value > 0) {
-            style_to_apply <- style_positive
-          }
-        } else if (!is.null(ref_matrix) &&
-                   row_idx <= nrow(ref_matrix) &&
-                   col_idx <= ncol(ref_matrix)) {
-          ref_numeric <- suppressWarnings(as.numeric(ref_matrix[row_idx, col_idx]))
-          value_numeric <- suppressWarnings(as.numeric(cell_value))
-          if (!is.na(ref_numeric) && ref_numeric > 0 && !grepl("\\|", as.character(cell_value))) {
-            if (!is.na(value_numeric) && value_numeric > 0) {
-              style_to_apply <- style_unplanted
-            }
-          }
-        }
+    if (isTRUE(highlight_positive)) {
+      numeric_matrix <- matrix(suppressWarnings(as.numeric(value_char)), nrow = n_rows, ncol = n_cols)
+      positive_mask <- !planted_mask & !is.na(numeric_matrix) & numeric_matrix > 0
+      applyStyleMask(positive_mask, style_positive)
+    } else if (!is.null(ref_data)) {
+      ref_matrix <- if (is.matrix(ref_data)) ref_data else as.matrix(ref_data)
+      compare_rows <- min(n_rows, nrow(ref_matrix))
+      compare_cols <- min(n_cols, ncol(ref_matrix))
 
-        if (!is.null(style_to_apply)) {
-          openxlsx::addStyle(
-            wb,
-            "Sheet1",
-            style = style_to_apply,
-            rows = target_row,
-            cols = col_idx,
-            gridExpand = FALSE,
-            stack = TRUE
-          )
-        }
+      if (compare_rows > 0 && compare_cols > 0) {
+        value_numeric <- matrix(suppressWarnings(as.numeric(value_char)), nrow = n_rows, ncol = n_cols)
+        ref_numeric <- matrix(NA_real_, nrow = n_rows, ncol = n_cols)
+        ref_numeric[seq_len(compare_rows), seq_len(compare_cols)] <- matrix(
+          suppressWarnings(as.numeric(ref_matrix[seq_len(compare_rows), seq_len(compare_cols), drop = FALSE])),
+          nrow = compare_rows,
+          ncol = compare_cols
+        )
+
+        unplanted_mask <-
+          !planted_mask &
+          !is.na(ref_numeric) &
+          ref_numeric > 0 &
+          !is.na(value_numeric) &
+          value_numeric > 0
+
+        applyStyleMask(unplanted_mask, style_unplanted)
       }
     }
   }
