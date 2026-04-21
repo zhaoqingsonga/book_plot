@@ -537,7 +537,8 @@ population_server <- function(id) {
     # 下载全部已生成记录
     output$btn_view_download_all <- downloadHandler(
       filename = function() {
-        paste0("群体田试记录_全部_", format(Sys.time(), "%Y%m%d%H%M%S"), ".xlsx")
+        exp_name <- if (!is.null(input$view_exp)) input$view_exp else "all"
+        paste0("群体田试记录_全部_", exp_name, ".xlsx")
       },
       content = function(file) {
         all_data <- getAllPopulationFieldRecords(db_path = db_path)
