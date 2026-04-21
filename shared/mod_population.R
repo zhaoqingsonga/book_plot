@@ -1055,7 +1055,11 @@ population_server <- function(id) {
 
     output$btn_download <- downloadHandler(
       filename = function() {
-        exp_name <- if (!is.null(rv$selected_exp)) rv$selected_exp else "population"
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = rv$selected_exp,
+          default_name = "population"
+        )
         paste0("群体记录本_", exp_name, ".xlsx")
       },
       content = function(file) {

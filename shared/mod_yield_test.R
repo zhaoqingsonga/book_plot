@@ -916,7 +916,11 @@ yield_test_server <- function(id) {
 
     output$btn_download <- downloadHandler(
       filename = function() {
-        exp_name <- if (!is.null(rv$selected_exp)) rv$selected_exp else "yield_test"
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = rv$selected_exp,
+          default_name = "yield_test"
+        )
         paste0("产比记录本_", exp_name, ".xlsx")
       },
       content = function(file) {

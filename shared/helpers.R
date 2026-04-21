@@ -57,6 +57,31 @@ buildGeneratedChoices <- function(records) {
   )
 }
 
+# 根据 experiment_id 获取试验名称，并清理不适合文件名的字符
+getExperimentFilenameLabel <- function(records, experiment_id, default_name) {
+  exp_name <- default_name
+
+  if (!is.null(experiment_id) && nzchar(trimws(as.character(experiment_id)))) {
+    record <- records[records$experiment_id == experiment_id, , drop = FALSE]
+
+    if (nrow(record) > 0 && !is.na(record$experiment_name[[1]]) && nzchar(trimws(record$experiment_name[[1]]))) {
+      exp_name <- trimws(as.character(record$experiment_name[[1]]))
+    } else {
+      exp_name <- trimws(as.character(experiment_id))
+    }
+  }
+
+  exp_name <- enc2utf8(exp_name)
+  exp_name <- gsub("[\\/:*?\"<>|]", "_", exp_name)
+  exp_name <- trimws(exp_name)
+
+  if (!nzchar(exp_name)) {
+    exp_name <- default_name
+  }
+
+  exp_name
+}
+
 # 解析对照品种输入
 parseCkInput <- function(ck_text) {
   if (nzchar(ck_text)) {
