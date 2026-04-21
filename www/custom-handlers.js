@@ -51,9 +51,11 @@ $(document).ready(function() {
   });
 
   Shiny.addCustomMessageHandler('experiments_module_refresh', function(message) {
-    if (window.Shiny) {
-      Shiny.setInputValue('experiments_module_refresh', Date.now(), { priority: 'event' });
+    if (!window.Shiny) {
+      return;
     }
+    var inputId = (message && message.id) ? message.id : 'experiments_module_refresh';
+    Shiny.setInputValue(inputId, Date.now(), { priority: 'event' });
   });
 
   // 试验列表点击处理

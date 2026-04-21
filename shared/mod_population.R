@@ -407,7 +407,12 @@ population_server <- function(id) {
           "已生成" = if (nrow(generated) > 0) setNames(generated$experiment_id, generated$experiment_name) else character(0),
           "未生成" = if (nrow(not_generated) > 0) setNames(not_generated$experiment_id, not_generated$experiment_name) else character(0)
         )
-        updateSelectInput(session, "select_exp", choices = choices)
+        updateSelectInput(
+          session,
+          "select_exp",
+          choices = choices,
+          selected = rv$selected_exp
+        )
 
       }, error = function(e) {
         showNotification(paste("保存失败:", e$message), type = "error")
@@ -608,7 +613,12 @@ population_server <- function(id) {
           "已生成" = if (nrow(generated2) > 0) setNames(generated2$experiment_id, generated2$experiment_name) else character(0),
           "未生成" = if (nrow(not_generated2) > 0) setNames(not_generated2$experiment_id, not_generated2$experiment_name) else character(0)
         )
-        updateSelectInput(session, "select_exp", choices = choices2)
+        updateSelectInput(
+          session,
+          "select_exp",
+          choices = choices2,
+          selected = rv$selected_exp
+        )
 
         showNotification("删除成功", type = "message")
       }, error = function(e) {
@@ -625,7 +635,12 @@ population_server <- function(id) {
     observe({
       rv$records <- listPopulationRecords(db_path = db_path)
       # 构建分组choices
-      updateSelectInput(session, "select_exp", choices = buildGeneratedChoices(rv$records))
+      updateSelectInput(
+        session,
+        "select_exp",
+        choices = buildGeneratedChoices(rv$records),
+        selected = rv$selected_exp
+      )
     })
 
     observeEvent(input$select_exp, {
@@ -753,7 +768,7 @@ population_server <- function(id) {
 
         # 清理可能干扰 planting() 的遗留列
         # 这些列应该是 planting() 的输出，不应该存在于输入数据中
-        cols_to_remove <- c("rows", "line_number", "is_ck", "fieldid", ".actual_rows")
+        cols_to_remove <- c("rows", "line_number", "is_ck", ".actual_rows")
         existing_cols_to_remove <- cols_to_remove[cols_to_remove %in% names(mydata)]
         if (length(existing_cols_to_remove) > 0) {
           mydata <- mydata[, !names(mydata) %in% existing_cols_to_remove, drop = FALSE]
@@ -974,10 +989,11 @@ population_server <- function(id) {
         }
 
         rv$planted_data <- planted
+        myview_cols <- intersect(c(fields, "ma", "pa", "former_fieldid", "former_stageid", "source"), names(planted))
         rv$output_data <- list(
           origin = mydata,
           planting = planted,
-          myview = planted[c(fields, "ma", "pa")],
+          myview = planted[, myview_cols, drop = FALSE],
           combi_matrix = combination_matrix(mydata)
         )
 
@@ -1014,7 +1030,7 @@ population_server <- function(id) {
           "正在准备下载记录本"
         ))
         showNotification("群体记录本生成成功!", type = "message")
-        session$sendCustomMessage("experiments_module_refresh", list())
+        session$sendCustomMessage("experiments_module_refresh", list(id = "exp_mod-experiments_module_refresh"))
         session$sendCustomMessage("auto_download_when_ready", list(
           id = ns("btn_download"),
           failInputId = ns("download_ready_timeout"),
@@ -1071,9 +1087,17 @@ population_server <- function(id) {
 
     output$btn_download <- downloadHandler(
       filename = function() {
+        records <- listPopulationRecords(db_path = db_path)
+        experiment_id <- NULL
+        if (!is.null(rv$selected_exp) && nzchar(trimws(as.character(rv$selected_exp)))) {
+          experiment_id <- rv$selected_exp
+        } else if (!is.null(input$select_exp) && nzchar(trimws(as.character(input$select_exp)))) {
+          experiment_id <- input$select_exp
+        }
+
         exp_name <- getExperimentFilenameLabel(
-          records = rv$records,
-          experiment_id = rv$selected_exp,
+          records = records,
+          experiment_id = experiment_id,
           default_name = "population"
         )
         paste0("群体记录本_", exp_name, ".xlsx")

@@ -417,7 +417,12 @@ yield_test_server <- function(id) {
 
         rv$records <- listYieldTestRecords(db_path = db_path)
         # 构建分组choices
-        updateSelectInput(session, "select_exp", choices = buildGeneratedChoices(rv$records))
+        updateSelectInput(
+          session,
+          "select_exp",
+          choices = buildGeneratedChoices(rv$records),
+          selected = rv$selected_exp
+        )
 
       }, error = function(e) {
         showNotification(paste("保存失败:", e$message), type = "error")
@@ -558,7 +563,16 @@ yield_test_server <- function(id) {
     # 下载全部已生成记录
     output$btn_view_download_all <- downloadHandler(
       filename = function() {
-        exp_name <- if (!is.null(input$view_exp)) input$view_exp else "all"
+        experiment_id <- NULL
+        if (!is.null(input$view_exp) && nzchar(trimws(as.character(input$view_exp)))) {
+          experiment_id <- input$view_exp
+        }
+
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = experiment_id,
+          default_name = "all"
+        )
         paste0("产比田试记录_全部_", exp_name, ".xlsx")
       },
       content = function(file) {
@@ -607,7 +621,12 @@ yield_test_server <- function(id) {
 
         # 刷新生成记录本页面的下拉列表
         rv$records <- records
-        updateSelectInput(session, "select_exp", choices = buildGeneratedChoices(records))
+        updateSelectInput(
+          session,
+          "select_exp",
+          choices = buildGeneratedChoices(records),
+          selected = rv$selected_exp
+        )
 
         showNotification("删除成功", type = "message")
       }, error = function(e) {
@@ -624,7 +643,12 @@ yield_test_server <- function(id) {
     observe({
       rv$records <- listYieldTestRecords(db_path = db_path)
       # 构建分组choices
-      updateSelectInput(session, "select_exp", choices = buildGeneratedChoices(rv$records))
+      updateSelectInput(
+        session,
+        "select_exp",
+        choices = buildGeneratedChoices(rv$records),
+        selected = rv$selected_exp
+      )
     })
 
     observeEvent(input$select_exp, {
@@ -841,7 +865,7 @@ yield_test_server <- function(id) {
         planted <- dplyr::bind_rows(all_planted)
 
         rv$planted_data <- planted
-        myview_cols <- intersect(c(fields, "ma", "pa"), names(planted))
+        myview_cols <- intersect(c(fields, "ma", "pa", "former_fieldid", "former_stageid", "source"), names(planted))
         rv$output_data <- list(
           origin = mydata,
           planting = planted,
@@ -882,7 +906,7 @@ yield_test_server <- function(id) {
           "<br>正在准备下载记录本"
         ))
         showNotification("产比记录本生成成功!", type = "message")
-        session$sendCustomMessage("experiments_module_refresh", list())
+        session$sendCustomMessage("experiments_module_refresh", list(id = "exp_mod-experiments_module_refresh"))
         session$sendCustomMessage("auto_download_when_ready", list(
           id = ns("btn_download"),
           failInputId = ns("download_ready_timeout"),
@@ -928,9 +952,17 @@ yield_test_server <- function(id) {
 
     output$btn_download <- downloadHandler(
       filename = function() {
+        records <- listYieldTestRecords(db_path = db_path)
+        experiment_id <- NULL
+        if (!is.null(rv$selected_exp) && nzchar(trimws(as.character(rv$selected_exp)))) {
+          experiment_id <- rv$selected_exp
+        } else if (!is.null(input$select_exp) && nzchar(trimws(as.character(input$select_exp)))) {
+          experiment_id <- input$select_exp
+        }
+
         exp_name <- getExperimentFilenameLabel(
-          records = rv$records,
-          experiment_id = rv$selected_exp,
+          records = records,
+          experiment_id = experiment_id,
           default_name = "yield_test"
         )
         paste0("产比记录本_", exp_name, ".xlsx")

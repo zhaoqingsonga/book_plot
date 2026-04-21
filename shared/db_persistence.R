@@ -1237,7 +1237,7 @@ importExperimentToDesignplot <- function(source_experiment_id, source_type = c("
 
     DBI::dbExecute(con, "DELETE FROM designplot_experiment_records WHERE experiment_id = ?", params = list(new_exp_id))
 
-    dp_records <- records[, c("fieldid", "id", "stageid", "name", "source", "code", "rp", "rows", "line_number", "place"), drop = FALSE]
+    dp_records <- records[, c("fieldid", "id", "stageid", "name", "former_fieldid", "source", "code", "rp", "rows", "line_number", "place"), drop = FALSE]
     dp_records$experiment_id <- new_exp_id
     dp_records$created_at <- now
 

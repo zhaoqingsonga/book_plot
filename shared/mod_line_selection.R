@@ -426,7 +426,12 @@ line_selection_server <- function(id) {
 
         rv$records <- listLineSelectionRecords(db_path = db_path)
         # 构建分组choices
-        updateSelectInput(session, "select_exp", choices = buildGeneratedChoices(rv$records))
+        updateSelectInput(
+          session,
+          "select_exp",
+          choices = buildGeneratedChoices(rv$records),
+          selected = rv$selected_exp
+        )
 
       }, error = function(e) {
         showNotification(paste("保存失败:", e$message), type = "error")
@@ -567,7 +572,16 @@ line_selection_server <- function(id) {
     # 下载全部已生成记录
     output$btn_view_download_all <- downloadHandler(
       filename = function() {
-        exp_name <- if (!is.null(input$view_exp)) input$view_exp else "all"
+        experiment_id <- NULL
+        if (!is.null(input$view_exp) && nzchar(trimws(as.character(input$view_exp)))) {
+          experiment_id <- input$view_exp
+        }
+
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = experiment_id,
+          default_name = "all"
+        )
         paste0("株行田试记录_全部_", exp_name, ".xlsx")
       },
       content = function(file) {
@@ -616,7 +630,12 @@ line_selection_server <- function(id) {
 
         # 刷新生成记录本页面的下拉列表
         rv$records <- records
-        updateSelectInput(session, "select_exp", choices = buildGeneratedChoices(records))
+        updateSelectInput(
+          session,
+          "select_exp",
+          choices = buildGeneratedChoices(records),
+          selected = rv$selected_exp
+        )
 
         showNotification("删除成功", type = "message")
       }, error = function(e) {
@@ -633,7 +652,12 @@ line_selection_server <- function(id) {
     observe({
       rv$records <- listLineSelectionRecords(db_path = db_path)
       # 构建分组choices
-      updateSelectInput(session, "select_exp", choices = buildGeneratedChoices(rv$records))
+      updateSelectInput(
+        session,
+        "select_exp",
+        choices = buildGeneratedChoices(rv$records),
+        selected = rv$selected_exp
+      )
     })
 
     observeEvent(input$select_exp, {
@@ -862,11 +886,12 @@ line_selection_server <- function(id) {
           }
         }
 
+        myview_cols <- intersect(c(fields, "ma", "pa", "sele", "former_fieldid", "former_stageid", "source"), names(planted))
         rv$output_data <- list(
           origin = origin,
           material = mydata,
           planting = planted,
-          myview = planted[c(fields, "ma", "pa", "sele")],
+          myview = planted[, myview_cols, drop = FALSE],
           combi_matrix = combination_matrix(mydata)
         )
 
@@ -903,7 +928,7 @@ line_selection_server <- function(id) {
           "正在准备下载记录本"
         ))
         showNotification("株行记录本生成成功!", type = "message")
-        session$sendCustomMessage("experiments_module_refresh", list())
+        session$sendCustomMessage("experiments_module_refresh", list(id = "exp_mod-experiments_module_refresh"))
         session$sendCustomMessage("auto_download_when_ready", list(
           id = ns("btn_download"),
           failInputId = ns("download_ready_timeout"),
@@ -945,9 +970,17 @@ line_selection_server <- function(id) {
 
     output$btn_download <- downloadHandler(
       filename = function() {
+        records <- listLineSelectionRecords(db_path = db_path)
+        experiment_id <- NULL
+        if (!is.null(rv$selected_exp) && nzchar(trimws(as.character(rv$selected_exp)))) {
+          experiment_id <- rv$selected_exp
+        } else if (!is.null(input$select_exp) && nzchar(trimws(as.character(input$select_exp)))) {
+          experiment_id <- input$select_exp
+        }
+
         exp_name <- getExperimentFilenameLabel(
-          records = rv$records,
-          experiment_id = rv$selected_exp,
+          records = records,
+          experiment_id = experiment_id,
           default_name = "line_selection"
         )
         paste0("株行记录本_", exp_name, ".xlsx")

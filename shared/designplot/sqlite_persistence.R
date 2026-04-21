@@ -99,6 +99,7 @@ initDesignplotDb <- function(con) {
         id TEXT,
         stageid TEXT,
         name TEXT,
+        former_fieldid TEXT,
         former_stageid TEXT,
         source TEXT,
         code TEXT,
@@ -175,12 +176,13 @@ initDesignplotDb <- function(con) {
         line_idx <- which(existing_names == "line_number")
         line_type <- if (length(line_idx) == 1) toupper(trimws(as.character(info$type[line_idx]))) else ""
         name_pos <- match("name", existing_names)
+        former_field_pos <- match("former_fieldid", existing_names)
         former_pos <- match("former_stageid", existing_names)
         source_pos <- match("source", existing_names)
 
         needs_migration <- !identical(line_type, "TEXT") ||
-          is.na(former_pos) || is.na(source_pos) || is.na(name_pos) ||
-          former_pos != (name_pos + 1L) || source_pos != (name_pos + 2L)
+          is.na(former_field_pos) || is.na(former_pos) || is.na(source_pos) || is.na(name_pos) ||
+          former_field_pos != (name_pos + 1L) || former_pos != (name_pos + 2L) || source_pos != (name_pos + 3L)
 
         if (isTRUE(needs_migration)) {
           source_expr <- function(col_name) {
@@ -197,6 +199,7 @@ initDesignplotDb <- function(con) {
                 id TEXT,
                 stageid TEXT,
                 name TEXT,
+                former_fieldid TEXT,
                 former_stageid TEXT,
                 source TEXT,
                 code TEXT,
@@ -208,11 +211,11 @@ initDesignplotDb <- function(con) {
               )
             ")
             insert_sql <- paste0(
-              "INSERT INTO experiment_records_new(record_id, experiment_id, fieldid, id, stageid, name, former_stageid, source, code, rp, rows, line_number, created_at) ",
+              "INSERT INTO experiment_records_new(record_id, experiment_id, fieldid, id, stageid, name, former_fieldid, former_stageid, source, code, rp, rows, line_number, created_at) ",
               "SELECT ",
               source_expr("record_id"), ", ", source_expr("experiment_id"), ", ", source_expr("fieldid"), ", ",
               source_expr("id"), ", ", source_expr("stageid"), ", ", source_expr("name"), ", ",
-              source_expr("former_stageid"), ", ", source_expr("source"), ", ", source_expr("code"), ", ",
+              source_expr("former_fieldid"), ", ", source_expr("former_stageid"), ", ", source_expr("source"), ", ", source_expr("code"), ", ",
               source_expr("rp"), ", ", source_expr("rows"), ", ",
               "CAST(", source_expr("line_number"), " AS TEXT), ",
               "COALESCE(", source_expr("created_at"), ", strftime('%Y-%m-%d %H:%M:%S', 'now'))",
@@ -292,7 +295,7 @@ normalizePlantingDataFrame <- function(planting_df) {
   if (!is.data.frame(planting_df) || nrow(planting_df) == 0) stop("planting 表不能为空")
 
   required_cols <- c("fieldid", "id", "stageid", "name", "source", "code", "rp", "rows", "line_number")
-  optional_cols <- c("former_stageid")
+  optional_cols <- c("former_fieldid", "former_stageid")
   target_cols <- c(required_cols, optional_cols)
   src_names <- names(planting_df)
   src_map <- stats::setNames(src_names, tolower(trimws(src_names)))
@@ -312,6 +315,7 @@ normalizePlantingDataFrame <- function(planting_df) {
   normalized$id <- as.character(normalized$id)
   normalized$stageid <- as.character(normalized$stageid)
   normalized$name <- as.character(normalized$name)
+  normalized$former_fieldid <- as.character(normalized$former_fieldid)
   normalized$former_stageid <- as.character(normalized$former_stageid)
   normalized$source <- as.character(normalized$source)
   normalized$code <- as.character(normalized$code)
@@ -378,7 +382,7 @@ saveExperimentWithRecords <- function(experiment_name, planting_df, db_path = de
     normalized$experiment_id <- exp_id
     normalized$created_at <- now
     DBI::dbWriteTable(con, "designplot_experiment_records",
-      normalized[, c("experiment_id", "fieldid", "id", "stageid", "name", "former_stageid", "source", "code", "rp", "rows", "line_number", "created_at")],
+      normalized[, c("experiment_id", "fieldid", "id", "stageid", "name", "former_fieldid", "former_stageid", "source", "code", "rp", "rows", "line_number", "created_at")],
       append = TRUE)
   })
 
