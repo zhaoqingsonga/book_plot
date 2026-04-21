@@ -924,6 +924,11 @@ experiments_server <- function(id) {
       refresh_version(1)
     })
 
+    # --- 跨模块刷新：被其他模块在生成记录后触发 ---
+    observeEvent(input$experiments_module_refresh, {
+      refresh_version(refresh_version() + 1)
+    })
+
     # --- 返回刷新和重置按钮ID（供外部调用）---
     list(
       btn_refresh = reactive(input$btn_refresh),

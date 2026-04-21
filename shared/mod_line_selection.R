@@ -903,6 +903,7 @@ line_selection_server <- function(id) {
           "正在准备下载记录本"
         ))
         showNotification("株行记录本生成成功!", type = "message")
+        session$sendCustomMessage("experiments_module_refresh", list())
         session$sendCustomMessage("auto_download_when_ready", list(
           id = ns("btn_download"),
           failInputId = ns("download_ready_timeout"),

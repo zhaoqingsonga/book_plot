@@ -50,6 +50,12 @@ $(document).ready(function() {
     }
   });
 
+  Shiny.addCustomMessageHandler('experiments_module_refresh', function(message) {
+    if (window.Shiny) {
+      Shiny.setInputValue('experiments_module_refresh', Date.now(), { priority: 'event' });
+    }
+  });
+
   // 试验列表点击处理
   $(document).on('click', '.exp-item', function() {
     var expId = $(this).attr('data-exp-id');
