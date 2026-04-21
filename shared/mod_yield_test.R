@@ -22,6 +22,13 @@ yield_test_ui <- function(id) {
             "上传产比材料清单"
           ),
           p("上传包含杂交组合的 Excel 文件（需包含 ma 母本、pa 父本列）。", class = "text-muted fb-panel-intro"),
+          p(strong("必填字段："), style = "font-size: 12px; color: #dc3545; margin-bottom: 5px;"),
+          tags$ul(
+            tags$li(code("name"), " - 材料名称（组合名称）"),
+            tags$li(code("next_stage"), " - 下一阶段"),
+            tags$li(code("f"), " - 世代"),
+            style = "font-size: 11px; color: #666; margin-top: 0; padding-left: 20px;"
+          ),
 
           fluidRow(
             column(4,

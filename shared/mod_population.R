@@ -22,6 +22,14 @@ population_ui <- function(id) {
             "上传群体材料清单"
           ),
           p("上传包含群体数据的 Excel 文件（需包含 f 世代列）。", class = "text-muted fb-panel-intro"),
+          p(strong("必填字段："), style = "font-size: 12px; color: #dc3545; margin-bottom: 5px;"),
+          tags$ul(
+            tags$li(code("name"), " - 材料名称"),
+            tags$li(code("next_stage"), " - 下一阶段"),
+            tags$li(code("f"), " - 世代（如 F1, F2, F3...）"),
+            tags$li(code("new_rows"), " - 种植行数"),
+            style = "font-size: 11px; color: #666; margin-top: 0; padding-left: 20px;"
+          ),
 
           fluidRow(
             column(4,

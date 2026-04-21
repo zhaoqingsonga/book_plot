@@ -22,6 +22,13 @@ line_selection_ui <- function(id) {
             "上传株行材料清单"
           ),
           p("上传株行材料清单 Excel，选择工作表后预览并保存。", class = "text-muted fb-panel-intro"),
+          p(strong("必填字段："), style = "font-size: 12px; color: #dc3545; margin-bottom: 5px;"),
+          tags$ul(
+            tags$li(code("name"), " - 材料名称"),
+            tags$li(code("sele"), " - 选择数（需 > 0）"),
+            tags$li(code("f"), " - 世代"),
+            style = "font-size: 11px; color: #666; margin-top: 0; padding-left: 20px;"
+          ),
 
           fluidRow(
             column(4,
