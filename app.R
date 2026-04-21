@@ -54,6 +54,8 @@ ui <- navbarPage(
     includeScript("www/custom-handlers.js")
   ),
 
+  useShinyjs(),
+
   # === 1. 群体记录本 ===
   tabPanel("群体记录本",
     icon = icon("dna"),
