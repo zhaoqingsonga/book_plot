@@ -416,6 +416,10 @@ buildDesignplotServer <- function(input, output) {
     sowTrigger(sowTrigger() + 1L)
   }
 
+  observeEvent(input$designplot_refresh, {
+    refreshExperiments()
+  })
+
   # ===========================================================================
   # 刷新播种列表
   # ===========================================================================

@@ -285,6 +285,7 @@ experiments_server <- function(id) {
 
       if (isTRUE(result$success)) {
         showNotification(result$message, type = "message", duration = 8)
+        session$sendCustomMessage('refresh_designplot_experiments', list())
       } else {
         showNotification(result$message, type = "error")
       }
@@ -294,6 +295,7 @@ experiments_server <- function(id) {
     perform_batch_import <- function(location_filter = NULL) {
       result <- importAllExperimentsToDesignplot(location_filter = location_filter, db_path = db_path())
       showNotification(result$message, type = "message", duration = 8)
+      session$sendCustomMessage('refresh_designplot_experiments', list())
       invisible(result)
     }
 

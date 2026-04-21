@@ -544,7 +544,18 @@ line_selection_server <- function(id) {
 
     output$btn_view_download <- downloadHandler(
       filename = function() {
-        exp_name <- if (!is.null(rv$view_exp_name)) rv$view_exp_name else "line_selection_field"
+        experiment_id <- NULL
+        if (!is.null(input$view_exp) && nzchar(trimws(as.character(input$view_exp)))) {
+          experiment_id <- input$view_exp
+        } else if (!is.null(rv$view_exp_name) && nzchar(trimws(as.character(rv$view_exp_name)))) {
+          experiment_id <- rv$view_exp_name
+        }
+
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = experiment_id,
+          default_name = "line_selection_field"
+        )
         paste0("株行田试记录_", exp_name, ".xlsx")
       },
       content = function(file) {

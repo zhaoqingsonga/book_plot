@@ -525,7 +525,18 @@ population_server <- function(id) {
 
     output$btn_view_download <- downloadHandler(
       filename = function() {
-        exp_name <- if (!is.null(rv$view_exp_name)) rv$view_exp_name else "population_field"
+        experiment_id <- NULL
+        if (!is.null(input$view_exp) && nzchar(trimws(as.character(input$view_exp)))) {
+          experiment_id <- input$view_exp
+        } else if (!is.null(rv$view_exp_name) && nzchar(trimws(as.character(rv$view_exp_name)))) {
+          experiment_id <- rv$view_exp_name
+        }
+
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = experiment_id,
+          default_name = "population_field"
+        )
         paste0("群体田试记录_", exp_name, ".xlsx")
       },
       content = function(file) {
@@ -537,7 +548,11 @@ population_server <- function(id) {
     # 下载全部已生成记录
     output$btn_view_download_all <- downloadHandler(
       filename = function() {
-        exp_name <- if (!is.null(input$view_exp)) input$view_exp else "all"
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = input$view_exp,
+          default_name = "all"
+        )
         paste0("群体田试记录_全部_", exp_name, ".xlsx")
       },
       content = function(file) {

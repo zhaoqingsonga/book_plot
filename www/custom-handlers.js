@@ -43,6 +43,13 @@ $(document).ready(function() {
     });
   });
 
+  // 通知田间种植模块刷新试验下拉框
+  Shiny.addCustomMessageHandler('refresh_designplot_experiments', function(message) {
+    if (window.Shiny) {
+      Shiny.setInputValue('designplot_refresh', Date.now(), { priority: 'event' });
+    }
+  });
+
   // 试验列表点击处理
   $(document).on('click', '.exp-item', function() {
     var expId = $(this).attr('data-exp-id');
