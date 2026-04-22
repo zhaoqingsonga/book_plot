@@ -1144,6 +1144,7 @@ initDesignplotTables <- function(con) {
       id TEXT,
       stageid TEXT,
       name TEXT,
+      former_fieldid TEXT,
       former_stageid TEXT,
       source TEXT,
       code TEXT,
@@ -1170,6 +1171,10 @@ initDesignplotTables <- function(con) {
   # 迁移：为 designplot_experiment_records 添加 place 列（如果不存在）
   tryCatch({
     DBI::dbExecute(con, "ALTER TABLE designplot_experiment_records ADD COLUMN place TEXT")
+  }, error = function(e) {})
+  # 迁移：为 designplot_experiment_records 添加 former_fieldid 列（如果不存在）
+  tryCatch({
+    DBI::dbExecute(con, "ALTER TABLE designplot_experiment_records ADD COLUMN former_fieldid TEXT")
   }, error = function(e) {})
 }
 
@@ -1237,7 +1242,7 @@ importExperimentToDesignplot <- function(source_experiment_id, source_type = c("
 
     DBI::dbExecute(con, "DELETE FROM designplot_experiment_records WHERE experiment_id = ?", params = list(new_exp_id))
 
-    dp_records <- records[, c("fieldid", "id", "stageid", "name", "former_fieldid", "source", "code", "rp", "rows", "line_number", "place"), drop = FALSE]
+    dp_records <- records[, c("fieldid", "id", "stageid", "name", "former_fieldid", "former_stageid", "source", "code", "rp", "rows", "line_number", "place"), drop = FALSE]
     dp_records$experiment_id <- new_exp_id
     dp_records$created_at <- now
 
