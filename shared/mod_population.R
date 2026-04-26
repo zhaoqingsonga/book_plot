@@ -400,17 +400,10 @@ population_server <- function(id) {
 
         # 刷新记录列表
         rv$records <- listPopulationRecords(db_path = db_path)
-        # 构建分组choices
-        generated <- rv$records[rv$records$has_generated == 1, ]
-        not_generated <- rv$records[rv$records$has_generated == 0, ]
-        choices <- c(
-          "已生成" = if (nrow(generated) > 0) setNames(generated$experiment_id, generated$experiment_name) else character(0),
-          "未生成" = if (nrow(not_generated) > 0) setNames(not_generated$experiment_id, not_generated$experiment_name) else character(0)
-        )
         updateSelectInput(
           session,
           "select_exp",
-          choices = choices,
+          choices = buildGeneratedChoices(rv$records),
           selected = rv$selected_exp
         )
 

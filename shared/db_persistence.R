@@ -1056,57 +1056,47 @@ syncToUnifiedTable <- function(db_path = defaultDbPath()) {
   now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   synced <- 0
 
+  # 批量查询 unified_records 中已存在的 experiment_id，避免 N+1
+  existing_ids <- DBI::dbGetQuery(con, "SELECT experiment_id FROM unified_records")$experiment_id
+
   # 同步群体记录
   pop_records <- DBI::dbGetQuery(con, "SELECT * FROM population_records")
-  for (i in 1:nrow(pop_records)) {
-    rec <- pop_records[i, ]
-    # 检查是否已存在
-    existing <- DBI::dbGetQuery(con,
-      "SELECT 1 FROM unified_records WHERE experiment_id = ?",
-      params = list(rec$experiment_id)
-    )
-    if (nrow(existing) == 0) {
+  new_pop <- pop_records[!pop_records$experiment_id %in% existing_ids, ]
+  if (nrow(new_pop) > 0) {
+    for (i in seq_len(nrow(new_pop))) {
+      rec <- new_pop[i, ]
       DBI::dbExecute(con,
         "INSERT INTO unified_records (experiment_id, experiment_type, experiment_name, source_id, total_rows, has_generated, generated_at, location, created_at, updated_at)
          VALUES (?, 'population', ?, NULL, ?, ?, ?, '', ?, ?)",
-        params = list(rec$experiment_id, rec$experiment_name, rec$total_rows, rec$has_generated, rec$generated_at, rec$created_at, rec$updated_at)
-      )
+        params = list(rec$experiment_id, rec$experiment_name, rec$total_rows, rec$has_generated, rec$generated_at, rec$created_at, rec$updated_at))
       synced <- synced + 1
     }
   }
 
   # 同步株行记录
   line_records <- DBI::dbGetQuery(con, "SELECT * FROM line_selection_records")
-  for (i in 1:nrow(line_records)) {
-    rec <- line_records[i, ]
-    existing <- DBI::dbGetQuery(con,
-      "SELECT 1 FROM unified_records WHERE experiment_id = ?",
-      params = list(rec$experiment_id)
-    )
-    if (nrow(existing) == 0) {
+  new_line <- line_records[!line_records$experiment_id %in% existing_ids, ]
+  if (nrow(new_line) > 0) {
+    for (i in seq_len(nrow(new_line))) {
+      rec <- new_line[i, ]
       DBI::dbExecute(con,
         "INSERT INTO unified_records (experiment_id, experiment_type, experiment_name, source_id, total_rows, has_generated, generated_at, created_at, updated_at)
          VALUES (?, 'line_selection', ?, ?, ?, ?, ?, ?, ?)",
-        params = list(rec$experiment_id, rec$experiment_name, rec$source_id, rec$total_rows, rec$has_generated, rec$generated_at, rec$created_at, rec$updated_at)
-      )
+        params = list(rec$experiment_id, rec$experiment_name, rec$source_id, rec$total_rows, rec$has_generated, rec$generated_at, rec$created_at, rec$updated_at))
       synced <- synced + 1
     }
   }
 
   # 同步产比记录
   yield_records <- DBI::dbGetQuery(con, "SELECT * FROM yield_test_records")
-  for (i in 1:nrow(yield_records)) {
-    rec <- yield_records[i, ]
-    existing <- DBI::dbGetQuery(con,
-      "SELECT 1 FROM unified_records WHERE experiment_id = ?",
-      params = list(rec$experiment_id)
-    )
-    if (nrow(existing) == 0) {
+  new_yield <- yield_records[!yield_records$experiment_id %in% existing_ids, ]
+  if (nrow(new_yield) > 0) {
+    for (i in seq_len(nrow(new_yield))) {
+      rec <- new_yield[i, ]
       DBI::dbExecute(con,
         "INSERT INTO unified_records (experiment_id, experiment_type, experiment_name, source_id, total_rows, has_generated, generated_at, location, created_at, updated_at)
          VALUES (?, 'yield_test', ?, NULL, ?, ?, ?, '', ?, ?)",
-        params = list(rec$experiment_id, rec$experiment_name, rec$total_rows, rec$has_generated, rec$generated_at, rec$created_at, rec$updated_at)
-      )
+        params = list(rec$experiment_id, rec$experiment_name, rec$total_rows, rec$has_generated, rec$generated_at, rec$created_at, rec$updated_at))
       synced <- synced + 1
     }
   }
@@ -1296,7 +1286,7 @@ getAvailableLocations <- function(db_path = defaultDbPath()) {
   for (field_table in c("population_field_records", "line_selection_field_records", "yield_test_field_records")) {
     tryCatch({
       places <- DBI::dbGetQuery(con,
-        sprintf("SELECT DISTINCT place FROM %s WHERE place IS NOT NULL AND place != '' ORDER BY place", field_table)
+        sprintf("SELECT DISTINCT place FROM %s WHERE place IS NOT NULL AND TRIM(place) != '' ORDER BY place", field_table)
       )
       if (nrow(places) > 0) {
         all_places <- c(all_places, places$place)
