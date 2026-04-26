@@ -369,14 +369,14 @@ table.dataTable tbody td {
 }
 
 /* DT 紧凑行高与单元格（原 app.R 内联，覆盖上方通用单元格样式） */
-.dataTable tbody tr {
+table.dataTable tbody tr {
   height: 20px !important;
 }
-.dataTable {
+table.dataTable {
   font-size: 0.9em !important;
 }
-.dataTable tbody td,
-.dataTable tbody th {
+table.dataTable tbody td,
+table.dataTable tbody th {
   padding: 2px 4px !important;
   vertical-align: middle !important;
   line-height: 1.2 !important;
@@ -385,16 +385,16 @@ table.dataTable tbody td {
   text-overflow: ellipsis;
   max-width: 120px;
 }
-.dataTable thead th {
+table.dataTable thead th {
   padding: 6px 4px !important;
   background-color: var(--bs-tertiary-bg, #f8f9fa);
   color: var(--bs-emphasis-color, #495057);
   font-weight: 600;
 }
-.dataTable tbody tr:hover {
+table.dataTable tbody tr:hover {
   background-color: #f1f3f5 !important;
 }
-.dataTable tbody tr.selected {
+table.dataTable tbody tr.selected {
   background-color: var(--bs-primary, #667eea) !important;
   color: #fff !important;
 }
