@@ -338,15 +338,18 @@ experiments_server <- function(id) {
         if (nrow(exps) > 0) {
           exps$year <- extract_year(dplyr::coalesce(exps$generated_at, exps$created_at))
 
-          for (i in seq_len(nrow(exps))) {
-            exp_id <- exps$experiment_id[i]
-            field_data <- DBI::dbGetQuery(con,
-              sprintf("SELECT fieldid FROM %s WHERE experiment_id = ? LIMIT 1", field_tbl),
-              params = list(exp_id)
-            )
-            if (nrow(field_data) > 0) {
-              exps$fieldid[i] <- field_data$fieldid[1]
-            }
+          # 一次查询所有试验的 fieldid，避免 N+1
+          fieldid_q <- sprintf(
+            "SELECT experiment_id, MIN(fieldid) as fieldid FROM %s
+             WHERE experiment_id IN (%s) AND fieldid IS NOT NULL
+             GROUP BY experiment_id",
+            field_tbl,
+            paste(rep("?", nrow(exps)), collapse = ",")
+          )
+          fieldid_map <- DBI::dbGetQuery(con, fieldid_q, params = as.list(exps$experiment_id))
+          if (nrow(fieldid_map) > 0) {
+            idx <- match(fieldid_map$experiment_id, exps$experiment_id)
+            exps$fieldid[idx] <- fieldid_map$fieldid
           }
           all_exps[[t]] <- exps
         }
@@ -947,10 +950,10 @@ experiments_server <- function(id) {
 # 辅助函数：获取类型图标
 get_type_icon <- function(type) {
   switch(type,
-    "population" = "users",
+    "population"    = "users",
     "line_selection" = "th-list",
-    "yield_test" = "chart-bar",
-    "file"
+    "yield_test"    = "chart-bar",
+    "file"          # 未知类型默认回退
   )
 }
 
