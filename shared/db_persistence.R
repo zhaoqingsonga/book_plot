@@ -1129,7 +1129,6 @@ initDesignplotTables <- function(con) {
       source_type TEXT CHECK(source_type IN ('population', 'line_selection', 'yield_test')),
       source_id TEXT,
       total_rows REAL DEFAULT 0,
-      has_planted INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -1235,8 +1234,8 @@ importExperimentToDesignplot <- function(source_experiment_id, source_type = c("
 
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con,
-      "INSERT OR REPLACE INTO designplot_experiments (experiment_id, experiment_name, source_type, source_id, total_rows, has_planted, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+      "INSERT OR REPLACE INTO designplot_experiments (experiment_id, experiment_name, source_type, source_id, total_rows, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)",
       params = list(new_exp_id, exp_name, source_type, source_experiment_id, total_rows, now, now)
     )
 
@@ -1378,7 +1377,7 @@ listDesignplotExperiments <- function(db_path = defaultDbPath()) {
   initDesignplotTables(con)
 
   experiments <- DBI::dbGetQuery(con,
-    "SELECT experiment_id, experiment_name, source_type, source_id, total_rows, has_planted, created_at
+    "SELECT experiment_id, experiment_name, source_type, source_id, total_rows, created_at
      FROM designplot_experiments ORDER BY created_at DESC"
   )
 
@@ -1389,7 +1388,6 @@ listDesignplotExperiments <- function(db_path = defaultDbPath()) {
       source_type = character(),
       source_id = character(),
       total_rows = numeric(),
-      has_planted = integer(),
       created_at = character(),
       stringsAsFactors = FALSE
     ))

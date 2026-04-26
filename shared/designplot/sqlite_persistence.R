@@ -580,7 +580,7 @@ resetImportedDesignplotExperiment <- function(experiment_id, db_path = defaultSq
 
     if ("designplot_experiments" %in% DBI::dbListTables(con)) {
       DBI::dbExecute(con,
-        "UPDATE designplot_experiments SET has_planted = 0, updated_at = ? WHERE experiment_id = ?",
+        "UPDATE designplot_experiments SET updated_at = ? WHERE experiment_id = ?",
         params = list(now, exp_id))
     }
   })
