@@ -33,7 +33,12 @@ renderFieldRecordTable <- function(data, pageLength = 15) {
   DT::renderDataTable({
     req(data())
     data()
-  }, options = list(pageLength = pageLength, scrollX = TRUE, dom = 'frtip'))
+  }, options = list(
+    pageLength = pageLength,
+    scrollX = TRUE,
+    dom = 'frtip',
+    class = 'compact'
+  ))
 }
 
 # 添加88个性状列（数据库表结构需要这些列，值都是NA）
