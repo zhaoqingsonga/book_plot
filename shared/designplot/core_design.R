@@ -7,6 +7,9 @@ safeSeq <- function(from, to, by = 1){
 
 getSta<-function(field=designPlot()){
   num_cols<-ncol(field)
+  if (num_cols <= STAT_COL_COUNT) {
+    return(data.frame(排长度 = numeric(0), 排数 = numeric(0), 行数 = numeric(0)))
+  }
   num_rows<-nrow(field)
   even_idx <- safeSeq(2, num_rows, 2)
   if(length(even_idx) == 0){
