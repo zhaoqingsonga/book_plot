@@ -366,24 +366,28 @@ saveExperimentWithRecords <- function(experiment_name, planting_df, db_path = de
     trimws(experiment_id)
   }
 
-  DBI::dbWithTransaction(con, {
-    existed <- DBI::dbGetQuery(con, "SELECT experiment_id FROM designplot_experiments WHERE experiment_id = ? LIMIT 1", params = list(exp_id))
-    if (!is.data.frame(existed) || nrow(existed) == 0) {
-      DBI::dbExecute(con,
-        "INSERT INTO designplot_experiments(experiment_id, experiment_name, total_rows, created_at, updated_at) VALUES(?, ?, ?, ?, ?)",
-        params = list(exp_id, exp_name, total_rows, now, now))
-    } else {
-      DBI::dbExecute(con,
-        "UPDATE designplot_experiments SET experiment_name = ?, total_rows = ?, updated_at = ? WHERE experiment_id = ?",
-        params = list(exp_name, total_rows, now, exp_id))
-    }
+  tryCatch({
+    DBI::dbWithTransaction(con, {
+      existed <- DBI::dbGetQuery(con, "SELECT experiment_id FROM designplot_experiments WHERE experiment_id = ? LIMIT 1", params = list(exp_id))
+      if (!is.data.frame(existed) || nrow(existed) == 0) {
+        DBI::dbExecute(con,
+          "INSERT INTO designplot_experiments(experiment_id, experiment_name, total_rows, created_at, updated_at) VALUES(?, ?, ?, ?, ?)",
+          params = list(exp_id, exp_name, total_rows, now, now))
+      } else {
+        DBI::dbExecute(con,
+          "UPDATE designplot_experiments SET experiment_name = ?, total_rows = ?, updated_at = ? WHERE experiment_id = ?",
+          params = list(exp_name, total_rows, now, exp_id))
+      }
 
-    DBI::dbExecute(con, "DELETE FROM designplot_experiment_records WHERE experiment_id = ?", params = list(exp_id))
-    normalized$experiment_id <- exp_id
-    normalized$created_at <- now
-    DBI::dbWriteTable(con, "designplot_experiment_records",
-      normalized[, c("experiment_id", "fieldid", "id", "stageid", "name", "former_fieldid", "former_stageid", "source", "code", "rp", "rows", "line_number", "created_at")],
-      append = TRUE)
+      DBI::dbExecute(con, "DELETE FROM designplot_experiment_records WHERE experiment_id = ?", params = list(exp_id))
+      normalized$experiment_id <- exp_id
+      normalized$created_at <- now
+      DBI::dbWriteTable(con, "designplot_experiment_records",
+        normalized[, c("experiment_id", "fieldid", "id", "stageid", "name", "former_fieldid", "former_stageid", "source", "code", "rp", "rows", "line_number", "created_at")],
+        append = TRUE)
+    })
+  }, error = function(e) {
+    stop("保存试验失败: ", e$message)
   })
 
   invisible(list(experiment_id = as.character(exp_id), experiment_name = exp_name, total_rows = total_rows,
