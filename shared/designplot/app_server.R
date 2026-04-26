@@ -1607,13 +1607,13 @@ buildDesignplotServer <- function(input, output) {
     paste("已规划总长", planed, "米。", sep = "")
   })
   output$simpleMydata <- DT::renderDataTable(
-    DT::datatable({ datasetSelected() }, options = list(pageLength = 50, lengthMenu = DT_PAGE_MENU)) %>%
+    DT::datatable({ datasetSelected() }, options = list(pageLength = 50, lengthMenu = DT_PAGE_MENU), class = "compact") %>%
       formatStyle(1:(ncol(datasetSelected()) - STAT_COL_COUNT), backgroundColor = styleInterval(COLOR_BREAKS, COLOR_VALUES))
   )
-  output$sta <- DT::renderDataTable(DT::datatable({ datasetStats() }, options = list(pageLength = 5, lengthMenu = DT_PAGE_MENU)))
+  output$sta <- DT::renderDataTable(DT::datatable({ datasetStats() }, options = list(pageLength = 5, lengthMenu = DT_PAGE_MENU), class = "compact"))
   contents <- reactive({ req(input$file1); read.xlsx(input$file1$datapath, 1) })
-  output$contents <- DT::renderDataTable(DT::datatable({ contents() }, options = list(pageLength = 5, lengthMenu = c(5, 10, 100, 1000, 10000))))
-  output$mydf <- DT::renderDataTable(DT::datatable({ currentSowData() }, options = list(pageLength = 5, lengthMenu = c(5, 15, 30, 100, 1000))))
+  output$contents <- DT::renderDataTable(DT::datatable({ contents() }, options = list(pageLength = 5, lengthMenu = c(5, 10, 100, 1000, 10000)), class = "compact"))
+  output$mydf <- DT::renderDataTable(DT::datatable({ currentSowData() }, options = list(pageLength = 5, lengthMenu = c(5, 15, 30, 100, 1000)), class = "compact"))
   output$selectedPlantPlotPreview <- DT::renderDataTable({
     preview_mat <- currentPlantPreviewMatrix()
     validate(need(!is.null(preview_mat) && is.matrix(preview_mat) && ncol(preview_mat) > 0, "暂无可预览的种植地块"))
@@ -1621,7 +1621,7 @@ buildDesignplotServer <- function(input, output) {
       formatStyle(columns = 1:ncol(preview_mat), `text-align` = "center") %>%
       formatStyle(1:(ncol(preview_mat) - STAT_COL_COUNT), backgroundColor = styleInterval(COLOR_BREAKS, COLOR_VALUES))
   })
-  output$experimentSeedRecords <- DT::renderDataTable(DT::datatable(experimentSeedData(), options = list(pageLength = 20, scrollX = TRUE)))
+  output$experimentSeedRecords <- DT::renderDataTable(DT::datatable(experimentSeedData(), options = list(pageLength = 20, scrollX = TRUE), class = "compact"))
   sqliteExperimentsForExport <- reactive({
     experimentsTrigger()
     experiments <- readTableFromSqlite("designplot_experiments", sqlite_db_path)
@@ -1635,7 +1635,8 @@ buildDesignplotServer <- function(input, output) {
 
   output$sqliteExperiments <- DT::renderDataTable(
     DT::datatable(sqliteExperiments(), options = list(pageLength = 5, scrollX = TRUE), escape = FALSE,
-                  selection = list(mode = "single", target = "row", selected = NULL))
+                  selection = list(mode = "single", target = "row", selected = NULL),
+                  class = "compact")
   )
 
   # ---- 点击试验名称表某行 → 同步下拉框 + 刷新右侧记录表 ----
@@ -1652,7 +1653,7 @@ buildDesignplotServer <- function(input, output) {
   })
 
   output$sqliteExperimentRecords <- DT::renderDataTable(
-    DT::datatable(sqliteExperimentRecords(), options = list(pageLength = 5, scrollX = TRUE))
+    DT::datatable(sqliteExperimentRecords(), options = list(pageLength = 5, scrollX = TRUE), class = "compact")
   )
   output$downloadExperimentsCsv <- downloadHandler(filename = function() { "experiments.csv" },
                                                     content = function(file) { write.csv(sqliteExperimentsForExport(), file, row.names = FALSE, fileEncoding = "UTF-8") })
