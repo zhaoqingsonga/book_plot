@@ -38,7 +38,7 @@ extractPlantingTargets<-function(field, start_row=1, start_col=1, end_row=NULL, 
     stop("种植起始行号必须为大于等于 1 的整数")
   }
   if(any(is.na(end_row)) || end_row!=as.integer(end_row)){
-    stop("种植终止行号必须为大于等于起始行的整数")
+    stop("种植终止行号必须为整数")
   }
   if(start_row < 1) stop("种植起始行号必须为大于等于 1 的整数")
   if(end_row < start_row) stop("种植起始行号不能大于终止行号")
@@ -212,7 +212,10 @@ fillUnplantedWithMaterial <- function(field, material_name, start_row=1, start_c
   if(is.null(end_col)) end_col <- data_cols
 
   if(any(is.na(start_row)) || start_row != as.integer(start_row) || start_row < 1) stop("种植起始行号必须为大于等于 1 的整数")
-  if(any(is.na(end_row)) || end_row != as.integer(end_row) || end_row < start_row) stop("种植终止行号必须为大于等于起始行的整数")
+  if(any(is.na(end_row)) || end_row != as.integer(end_row)){
+    stop("种植终止行号必须为整数")
+  }
+  if(end_row < start_row) stop("种植起始行号不能大于终止行号")
   if(any(is.na(c(start_col, end_col))) || start_col != as.integer(start_col) || end_col != as.integer(end_col)) stop("种植列范围必须为整数")
   if(start_col < 1 || start_col > data_cols) stop(paste0("种植起始列必须在 1 到 ", data_cols, " 之间"))
   if(end_col < 1 || end_col > data_cols) stop(paste0("种植终止列必须在 1 到 ", data_cols, " 之间"))

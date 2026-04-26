@@ -178,7 +178,7 @@ buildDesignplotServer <- function(input, output) {
       group_rows = input$subg,
       plant_start_pos = input$experimentPlantStartPos,
       plant_end_pos = input$experimentPlantEndPos,
-      design_from_left = as.logical(input$design_from_left)
+      design_from_left = identical(input$design_from_left, "TRUE")
     )
   })
 
@@ -683,8 +683,8 @@ buildDesignplotServer <- function(input, output) {
 
     # 从右规划时，镜像列坐标（与田间布局镜像方向一致）
     # 用户看UI图输入"列1"种最左边的L1，实际对应物理列 max_cols
-    design_from_left <- as.logical(input$design_from_left)
-    if (!isTRUE(design_from_left)) {
+    design_from_left <- identical(input$design_from_left, "TRUE")
+    if (!design_from_left) {
       parsed$start_col <- total_cols + 1 - parsed$start_col
       parsed$end_col   <- total_cols + 1 - parsed$end_col
       # 镜像后可能 start > end，需要交换
@@ -728,7 +728,7 @@ buildDesignplotServer <- function(input, output) {
       water_columns <- w_c()$water_cols
       lane_columns <- w_c()$lane_cols
       p_a <- parsed_params$p_a
-      design_from_left <- as.logical(input$design_from_left)
+      design_from_left <- identical(input$design_from_left, "TRUE")
       result <- designPlot(
         blocks, y, bridges, ww, w,
         protected_columns, protected_blocks,
@@ -788,7 +788,7 @@ buildDesignplotServer <- function(input, output) {
       protect_strip = input$protected_blocks, cross_path_width = input$ww,
       row_gap = input$w, group_rows = input$subg,
       plant_start_pos = input$experimentPlantStartPos, plant_end_pos = input$experimentPlantEndPos,
-      plan_left = as.logical(input$design_from_left)
+      plan_left = identical(input$design_from_left, "TRUE")
     )
   })
 
