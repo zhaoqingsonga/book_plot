@@ -51,7 +51,6 @@ buildDesignplotUI <- function(){
                                 tags$div(style = "height:10px;"),
                                 tags$div("种植方向", style = "font-size:14px;font-weight:600;color:#1f2937;margin-bottom:4px;"),
                                 radioButtons("design_from_left", h5("地块编号方向"), choices = list("从左" = TRUE, "从右" = FALSE), selected = TRUE, inline = TRUE),
-                                radioButtons("plant_from_left", h5("材料排种方向"), choices = list("从左" = TRUE, "从右" = FALSE), selected = TRUE, inline = TRUE),
                                 tags$div(style = "height:10px;"),
                                 tags$details(
                                   style = "background:#ffffff;border:1px dashed #d1d5db;border-radius:6px;padding:6px 8px;",

@@ -178,8 +178,7 @@ buildDesignplotServer <- function(input, output) {
       group_rows = input$subg,
       plant_start_pos = input$experimentPlantStartPos,
       plant_end_pos = input$experimentPlantEndPos,
-      design_from_left = as.logical(input$design_from_left),
-      plant_from_left = as.logical(input$plant_from_left)
+      design_from_left = as.logical(input$design_from_left)
     )
   })
 
@@ -200,7 +199,7 @@ buildDesignplotServer <- function(input, output) {
           strip_width = "10,6/3,10", protect_strip = "",
           cross_path_width = 1, row_gap = 0.5, group_rows = 1,
           plant_start_pos = "1,1", plant_end_pos = "",
-          plan_left = TRUE, plant_left = TRUE
+          plan_left = TRUE
         ),
         sqlite_db_path
       )
@@ -714,12 +713,11 @@ buildDesignplotServer <- function(input, output) {
       lane_columns <- w_c()$lane_cols
       p_a <- parsed_params$p_a
       design_from_left <- as.logical(input$design_from_left)
-      plant_from_left <- as.logical(input$plant_from_left)
       result <- designPlot(
         blocks, y, bridges, ww, w,
         protected_columns, protected_blocks,
         water_columns, lane_columns, p_a,
-        design_from_left, plant_from_left, subg
+        design_from_left, subg
       )
       lastValidDataset(result)
       result
@@ -764,7 +762,6 @@ buildDesignplotServer <- function(input, output) {
     if (!is.null(start_pos) && !is.na(start_pos)) updateTextInput(inputId = "experimentPlantStartPos", value = as.character(start_pos))
     if (!is.null(end_pos) && !is.na(end_pos)) updateTextInput(inputId = "experimentPlantEndPos", value = as.character(end_pos))
     updateRadioButtons(inputId = "design_from_left", selected = ifelse(!is.na(model$plan_left), as.logical(model$plan_left), TRUE))
-    updateRadioButtons(inputId = "plant_from_left", selected = ifelse(!is.na(model$plant_left), as.logical(model$plant_left), TRUE))
     invisible(NULL)
   }
 
@@ -775,8 +772,7 @@ buildDesignplotServer <- function(input, output) {
       protect_strip = input$protected_blocks, cross_path_width = input$ww,
       row_gap = input$w, group_rows = input$subg,
       plant_start_pos = input$experimentPlantStartPos, plant_end_pos = input$experimentPlantEndPos,
-      plan_left = as.logical(input$design_from_left),
-      plant_left = as.logical(input$plant_from_left)
+      plan_left = as.logical(input$design_from_left)
     )
   })
 

@@ -396,9 +396,8 @@ designPlot<-function(blocks=20,
                      lane_columns=c(9),
                      p_a=c(56,65,6,8,
                            34,38,2,5),
-                     design_from_left=TRUE,
-                     plant_from_left=TRUE,
-                     subg=3
+                    design_from_left=TRUE,
+                    subg=3
 ){
   if(is.null(blocks) || is.na(blocks) || blocks<=0 || blocks!=as.integer(blocks)){
     stop("blocks 必须是大于0的整数")
@@ -453,7 +452,7 @@ designPlot<-function(blocks=20,
     if(any(p_a_matrix[,3]<1) || any(p_a_matrix[,4]>y)) stop(paste0("不能种植地块的行范围必须在 1 到 ", y, " 之间"))
   }
 
-  serpentine_marker<-if(isTRUE(plant_from_left)) 1 else 0
+  serpentine_marker<-1
   total_rows<-blocks*2
   bridges<-normalizeBridges(bridges, blocks)
   field<-initFieldMatrix(total_rows, y, water_columns, lane_columns, ww, w, bridges, blocks)

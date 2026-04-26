@@ -64,7 +64,6 @@ initDesignplotDb <- function(con) {
         plant_start_col INTEGER,
         plant_end_col INTEGER,
         plan_left INTEGER,
-        plant_left INTEGER,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -121,7 +120,6 @@ initDesignplotDb <- function(con) {
         row_gap REAL,
         group_rows INTEGER,
         design_from_left INTEGER,
-        plant_from_left INTEGER,
         created_at TEXT NOT NULL
       )
     ")
@@ -950,7 +948,7 @@ getFieldModel <- function(field_name, db_path = defaultSqlitePath()) {
   if (is_update) {
     # UPDATE（直接绑定命名参数）
     DBI::dbExecute(con,
-      "UPDATE field_models SET field_len = ?, no_plant = ?, field_layout = ?, strip_width = ?, protect_strip = ?, cross_path_width = ?, row_gap = ?, group_rows = ?, plant_start_pos = ?, plant_end_pos = ?, plant_start_row = ?, plant_start_col = ?, plant_end_col = ?, plan_left = ?, plant_left = ?, updated_at = ? WHERE field_name = ?",
+      "UPDATE field_models SET field_len = ?, no_plant = ?, field_layout = ?, strip_width = ?, protect_strip = ?, cross_path_width = ?, row_gap = ?, group_rows = ?, plant_start_pos = ?, plant_end_pos = ?, plant_start_row = ?, plant_start_col = ?, plant_end_col = ?, plan_left = ?, updated_at = ? WHERE field_name = ?",
       params = list(
         model_data$field_len %||% NA_real_,
         model_data$no_plant %||% NA_character_,
@@ -966,14 +964,13 @@ getFieldModel <- function(field_name, db_path = defaultSqlitePath()) {
         model_data$plant_start_col %||% NA_integer_,
         model_data$plant_end_col %||% NA_integer_,
         as.integer(isTRUE(model_data$plan_left)),
-        as.integer(isTRUE(model_data$plant_left)),
         now,
         model_name
       ))
   } else {
     # INSERT
     DBI::dbExecute(con,
-      "INSERT INTO field_models(field_name, field_len, no_plant, field_layout, strip_width, protect_strip, cross_path_width, row_gap, group_rows, plant_start_pos, plant_end_pos, plant_start_row, plant_start_col, plant_end_col, plan_left, plant_left, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO field_models(field_name, field_len, no_plant, field_layout, strip_width, protect_strip, cross_path_width, row_gap, group_rows, plant_start_pos, plant_end_pos, plant_start_row, plant_start_col, plant_end_col, plan_left, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       params = list(
         model_name,
         model_data$field_len %||% NA_real_,
@@ -990,7 +987,6 @@ getFieldModel <- function(field_name, db_path = defaultSqlitePath()) {
         model_data$plant_start_col %||% NA_integer_,
         model_data$plant_end_col %||% NA_integer_,
         as.integer(isTRUE(model_data$plan_left)),
-        as.integer(isTRUE(model_data$plant_left)),
         now, now
       ))
   }
@@ -1124,12 +1120,12 @@ savePlanToSqlite <- function(plan_matrix, experiment_name, db_path = defaultSqli
     DBI::dbExecute(con, "DELETE FROM plan_slots WHERE plan_id = ?", params = list(plan_id))
     DBI::dbExecute(con, "DELETE FROM plan_runs WHERE plan_id = ?", params = list(plan_id))
     DBI::dbExecute(con,
-      "INSERT INTO plan_runs(plan_id, experiment_name, source_param_file, field_length, field_layout, bridge_layout, row_gap, group_rows, design_from_left, plant_from_left, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      params = list(plan_id, experiment_name, metadata$source_param_file %||% NA_character_,
-                    metadata$field_length %||% NA_real_, metadata$field_layout %||% NA_character_,
-                    metadata$bridge_layout %||% NA_character_, metadata$row_gap %||% NA_real_,
-                    metadata$group_rows %||% NA_integer_,
-                    as.integer(isTRUE(metadata$design_from_left)), as.integer(isTRUE(metadata$plant_from_left)), created_at))
+        "INSERT INTO plan_runs(plan_id, experiment_name, source_param_file, field_length, field_layout, bridge_layout, row_gap, group_rows, design_from_left, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params = list(plan_id, experiment_name, metadata$source_param_file %||% NA_character_,
+                      metadata$field_length %||% NA_real_, metadata$field_layout %||% NA_character_,
+                      metadata$bridge_layout %||% NA_character_, metadata$row_gap %||% NA_real_,
+                      metadata$group_rows %||% NA_integer_,
+                      as.integer(isTRUE(metadata$design_from_left)), created_at))
     if (nrow(slots) > 0) {
       slots$plan_id <- plan_id
       slots$created_at <- created_at
@@ -1298,8 +1294,8 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
       DBI::dbExecute(con,
         paste0(
           "INSERT INTO plan_runs(plan_id, experiment_name, source_param_file, field_length, field_layout, ",
-          "bridge_layout, row_gap, group_rows, design_from_left, plant_from_left, created_at) ",
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          "bridge_layout, row_gap, group_rows, design_from_left, created_at) ",
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         ),
         params = list(
           as.character(pr$plan_id[1]),
@@ -1311,7 +1307,6 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
           suppressWarnings(as.numeric(if ("row_gap" %in% names(pr)) pr$row_gap[1] else NA_real_)),
           suppressWarnings(as.integer(if ("group_rows" %in% names(pr)) pr$group_rows[1] else NA_integer_)),
           suppressWarnings(as.integer(if ("design_from_left" %in% names(pr)) pr$design_from_left[1] else NA_integer_)),
-          suppressWarnings(as.integer(if ("plant_from_left" %in% names(pr)) pr$plant_from_left[1] else NA_integer_)),
           as.character(pr$created_at[1])
         ))
     }

@@ -72,8 +72,7 @@ parseParamTxt<-function(file_path){
     "plant_start_row",
     "plant_start_col",
     "plant_end_col",
-    "plan_left",
-    "plant_left"
+    "plan_left"
   )
   parse_bool<-function(x){
     xv<-toupper(trimws(x))
@@ -99,7 +98,7 @@ parseParamTxt<-function(file_path){
     if(v=="") next
     if(k %in% c("field_len","cross_path_width","row_gap","group_rows","plant_start_row","plant_start_col","plant_end_col")){
       params[[k]]<-as.numeric(v)
-    }else if(k %in% c("plan_left","plant_left")){
+    }else if(k == "plan_left"){
       params[[k]]<-parse_bool(v)
     }else{
       params[[k]]<-v
