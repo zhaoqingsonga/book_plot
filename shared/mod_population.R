@@ -720,7 +720,7 @@ population_server <- function(id) {
         deletePopulationFieldRecord(rv$selected_exp, db_path = db_path)
       }, error = function(e) {
         # 如果删除失败（记录不存在），继续生成
-        print("删除旧记录失败或记录不存在:", e$message)
+        message("删除旧记录失败或记录不存在: ", e$message)
       })
 
       # 执行生成
@@ -837,10 +837,6 @@ population_server <- function(id) {
           stop("父本(pa)列全部为空，请检查数据")
         }
 
-        print("=== get_population input ===")
-        print(str(mydata))
-        print(head(mydata))
-        print(names(mydata))
         mydata <- soyplant::get_population(mydata)
 
         # 确保f列是整数（get_population可能改变其类型）
@@ -855,11 +851,6 @@ population_server <- function(id) {
         if (!is.data.frame(mydata) || nrow(mydata) == 0) {
           stop(paste("get_population返回无效数据:", paste(capture.output(str(mydata)), collapse = "\n")))
         }
-
-        # 调试：检查get_population返回的数据
-        print("=== get_population result ===")
-        print(str(mydata))
-        print(head(mydata))
 
         # 按 source 恢复实际 new_rows（不依赖 get_population() 前后行数一致）
         source_key <- as.character(mydata$source)
@@ -905,11 +896,6 @@ population_server <- function(id) {
             digits = input$digits, ck = ck_value,
             ckfixed = input$ckfixed, restartfid = TRUE, startN = input$startN
           )
-
-          # 调试：检查 planting 返回的 is_ck 和 source
-          print(paste0("=== location ", i, " planting is_ck ==="))
-          print(table(planted_loc$is_ck, useNA = "ifany"))
-          print(paste0("source NA count: ", sum(is.na(planted_loc$source))))
 
           # 从mydata合并额外字段到planted
           # 保存原始 is_ck，merge 会覆盖它
@@ -979,10 +965,6 @@ population_server <- function(id) {
         }
         planted <- dplyr::bind_rows(all_planted)
 
-        # 调试：检查planting返回的数据
-        print("=== planting result ===")
-        print(str(planted))
-
         # 确保 is_ck 是整数（避免保存到数据库时出现小数点）
         if ("is_ck" %in% names(planted)) {
           planted$is_ck <- as.integer(planted$is_ck)
@@ -1039,10 +1021,7 @@ population_server <- function(id) {
         ))
 
       }, error = function(e) {
-        print("========================================")
-        print("ERROR in population generation:")
-        print(e)
-        print("========================================")
+        message("population generation error: ", e$message)
 
         # 解析错误信息，转换为用户可理解的中文
         err_msg <- e$message
@@ -1079,7 +1058,7 @@ population_server <- function(id) {
             '</pre>'
           ))
         }, error = function(e2) {
-          print("shinyjs::html also failed:", e2$message)
+          message("shinyjs::html also failed: ", e2$message)
         })
         showNotification(user_msg, type = "error", duration = 10)
       })

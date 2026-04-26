@@ -744,7 +744,7 @@ line_selection_server <- function(id) {
       tryCatch({
         deleteLineSelectionFieldRecord(rv$selected_exp, db_path = db_path)
       }, error = function(e) {
-        print("删除旧记录失败或记录不存在:", e$message)
+        message("删除旧记录失败或记录不存在: ", e$message)
       })
 
       # 执行生成
@@ -937,10 +937,7 @@ line_selection_server <- function(id) {
         ))
 
       }, error = function(e) {
-        print("========================================")
-        print("ERROR in line_selection generation:")
-        print(e)
-        print("========================================")
+        message("ERROR in line_selection generation: ", e$message)
 
         # 解析错误信息，转换为用户可理解的中文
         err_msg <- e$message
@@ -962,7 +959,7 @@ line_selection_server <- function(id) {
             '</pre>'
           ))
         }, error = function(e2) {
-          print("shinyjs::html also failed:", e2$message)
+          message("shinyjs::html also failed: ", e2$message)
         })
         showNotification(user_msg, type = "error", duration = 10)
       })
