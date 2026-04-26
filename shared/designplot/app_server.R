@@ -676,10 +676,26 @@ buildDesignplotServer <- function(input, output) {
   planningCoordinateRange <- reactive({
     total_cols <- w_c()$total_cols
     total_rows <- nrow(datasetInput())
-    tryCatch(
+    parsed <- tryCatch(
       parsePlantingCoordinateRange(input$experimentPlantStartPos, input$experimentPlantEndPos, total_rows, total_cols),
       error = function(e) validate(need(FALSE, paste0("种植位置设置错误：", e$message)))
     )
+
+    # 从右规划时，镜像列坐标（与田间布局镜像方向一致）
+    # 用户看UI图输入"列1"种最左边的L1，实际对应物理列 max_cols
+    design_from_left <- as.logical(input$design_from_left)
+    if (!isTRUE(design_from_left)) {
+      parsed$start_col <- total_cols + 1 - parsed$start_col
+      parsed$end_col   <- total_cols + 1 - parsed$end_col
+      # 镜像后可能 start > end，需要交换
+      if (parsed$start_col > parsed$end_col) {
+        tmp <- parsed$start_col
+        parsed$start_col <- parsed$end_col
+        parsed$end_col <- tmp
+      }
+    }
+
+    parsed
   })
 
   w_c <- reactive({
