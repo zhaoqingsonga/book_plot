@@ -473,7 +473,7 @@ line_selection_server <- function(id) {
     output$detail_table <- DT::renderDataTable({
       req(rv$materials)
       rv$materials
-    }, options = list(pageLength = 10, scrollX = TRUE))
+    }, options = list(pageLength = 10, scrollX = TRUE), class = "compact")
 
     observeEvent(input$delete_record_row, {
       req(input$delete_record_row$experiment_id)
