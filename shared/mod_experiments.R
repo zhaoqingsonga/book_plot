@@ -676,6 +676,7 @@ experiments_server <- function(id) {
         display_df,
         rownames = FALSE,
         escape = FALSE,
+        class = "compact",
         options = list(
           pageLength = 10,
           lengthMenu = c(10, 20, 50, 100),
