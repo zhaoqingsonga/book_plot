@@ -163,7 +163,7 @@ normalizeBridges <- function(bridges, blocks){
 finalizeFieldColumns <- function(field, y){
   field[, y + STAT_COL_OFFSET_INTERVAL][field[, y + STAT_COL_OFFSET_INTERVAL] == CODE_GROUP_PAD] <- NA
   field[, y + STAT_COL_COUNT - STAT_COL_OFFSET_INTERVAL][field[, y + STAT_COL_COUNT - STAT_COL_OFFSET_INTERVAL] == CODE_GROUP_PAD] <- 0
-  colnames(field) <- c(paste0("V", 1:y), STAT_COL_NAMES)
+  colnames(field) <- c(paste0("L", 1:y), STAT_COL_NAMES)
   field
 }
 

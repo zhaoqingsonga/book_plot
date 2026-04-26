@@ -36,7 +36,8 @@ buildDesignplotServer <- function(input, output) {
   }
 
   # 构建田间布局 ggplot 对象（output 与 download 共用）
-  buildFieldLayoutGgplot <- function(layout_df, plant_matrix, simplified_name, metrics) {
+  buildFieldLayoutGgplot <- function(layout_df, plant_matrix, simplified_name, metrics,
+                                     design_from_left = TRUE) {
     normalizeSupplementLabel <- function(x) {
       x <- trimws(as.character(x))
       x <- sub("^补种\\s*[:：-]\\s*", "", x)
@@ -92,8 +93,27 @@ buildDesignplotServer <- function(input, output) {
     }
 
     p +
-      scale_x_continuous(name = "行", breaks = seq(0, metrics$total_cols, by = max(1, floor(metrics$total_cols / 10))),
-                         limits = c(0, metrics$total_cols + 1)) +
+      {
+        total <- metrics$total_cols
+        step <- max(1, floor(total / 10))
+        if (isTRUE(design_from_left)) {
+          # 从左规划：L1 在左侧（物理列1），每10列递增
+          breaks_vec <- seq(0, total, by = step)
+          labels_vec <- paste0("L", breaks_vec)
+        } else {
+          # 从右规划：L1 在右侧（物理列 total），反向标注
+          # 物理列 y=L1, y-10=L11, y-20=L21, ...
+          # L# = ((total - physical_col) / step) + 1
+          breaks_vec <- rev(seq(0, total, by = step))
+          labels_vec <- paste0("L", ((total - breaks_vec) / step) + 1)
+        }
+        scale_x_continuous(
+          name = "行",
+          breaks = breaks_vec,
+          labels = labels_vec,
+          limits = c(0, total + 1)
+        )
+      } +
       scale_y_continuous(name = "排", breaks = seq(0, metrics$max_row_id + 2, by = 2),
                          limits = c(0, metrics$max_row_id + 0.5), expand = c(0, 0)) +
       coord_fixed(ratio = metrics$aspect_ratio) +
@@ -2091,7 +2111,8 @@ buildDesignplotServer <- function(input, output) {
     plant_matrix <- readPlantTable(selected_table, sqlite_db_path)
     metrics <- computeLayoutPlotMetrics(plant_matrix)
 
-    p <- buildFieldLayoutGgplot(layout_df, plant_matrix, simplified_name, metrics)
+    df_left <- as.logical(input$design_from_left)
+    p <- buildFieldLayoutGgplot(layout_df, plant_matrix, simplified_name, metrics, design_from_left = df_left)
     print(p)
   })
 
@@ -2113,7 +2134,8 @@ buildDesignplotServer <- function(input, output) {
       plant_matrix <- readPlantTable(selected_table, sqlite_db_path)
       metrics <- computeLayoutPlotMetrics(plant_matrix)
 
-      p <- buildFieldLayoutGgplot(layout_df, plant_matrix, simplified_name, metrics)
+      df_left <- as.logical(input$design_from_left)
+      p <- buildFieldLayoutGgplot(layout_df, plant_matrix, simplified_name, metrics, design_from_left = df_left)
       ggplot2::ggsave(filename = file, plot = p, width = 14, height = 9, dpi = 150)
     }
   )
