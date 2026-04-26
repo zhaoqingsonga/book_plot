@@ -1536,8 +1536,9 @@ buildDesignplotServer <- function(input, output) {
     experiments <- readTableFromSqlite("designplot_experiments", sqlite_db_path)
     stripExperimentTsCols <- function(df) {
       if (!is.data.frame(df)) return(df)
-      drop_ts <- intersect(c("created_at", "updated_at"), names(df))
-      if (length(drop_ts) > 0) df[, setdiff(names(df), drop_ts), drop = FALSE] else df
+      drop_ts <- c("created_at", "updated_at", "has_planted")
+      drop_cols <- intersect(drop_ts, names(df))
+      if (length(drop_cols) > 0) df[, setdiff(names(df), drop_cols), drop = FALSE] else df
     }
     if (!is.data.frame(experiments) || nrow(experiments) == 0) return(stripExperimentTsCols(experiments))
     filter_id <- trimws(input$sqliteFilterExperimentId)
