@@ -411,6 +411,12 @@ experiments_server <- function(id) {
         combined <- combined[matches, , drop = FALSE]
       }
 
+      # 类型筛选
+      type_val <- input$filter_type
+      if (!is.null(type_val) && nzchar(type_val)) {
+        combined <- combined[combined$experiment_type == type_val, , drop = FALSE]
+      }
+
       # 搜索筛选
       if (!is.null(search_val) && nzchar(search_val)) {
         pattern <- tolower(search_val)
