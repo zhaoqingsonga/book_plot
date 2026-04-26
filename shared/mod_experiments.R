@@ -294,7 +294,11 @@ experiments_server <- function(id) {
 
     perform_batch_import <- function(location_filter = NULL) {
       result <- importAllExperimentsToDesignplot(location_filter = location_filter, db_path = db_path())
-      showNotification(result$message, type = "message", duration = 8)
+      if (isTRUE(result$success)) {
+        showNotification(result$message, type = "message", duration = 8)
+      } else {
+        showNotification(result$message, type = "error")
+      }
       session$sendCustomMessage('refresh_designplot_experiments', list())
       invisible(result)
     }

@@ -1363,6 +1363,7 @@ importAllExperimentsToDesignplot <- function(location_filter = NULL, db_path = d
     ""
   }
   list(
+    success = (success_count > 0),
     total_imported = success_count,
     results = results,
     message = sprintf("共成功导入 %d 个试验 %s", success_count, loc_msg)
