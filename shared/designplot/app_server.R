@@ -961,6 +961,18 @@ buildDesignplotServer <- function(input, output) {
     sub("\\.plant$", "", p)
   })
 
+  selectedPlantDisplayFromLeft <- reactive({
+    plantTableTrigger()
+    field_name <- selectedLayoutFieldName()
+    if (!is.na(field_name) && nzchar(field_name)) {
+      model <- tryCatch(getFieldModel(field_name, sqlite_db_path), error = function(e) NULL)
+      if (is.list(model) && !is.null(model$plan_left) && !is.na(model$plan_left)) {
+        return(isTRUE(as.logical(model$plan_left)))
+      }
+    }
+    identical(input$design_from_left, "TRUE")
+  })
+
   selectedSowTableName <- reactive({
     sowTrigger()
     plantTableTrigger()
@@ -1485,7 +1497,7 @@ buildDesignplotServer <- function(input, output) {
 
   currentPlantPreviewDisplayMatrix <- reactive({
     preview_mat <- currentPlantPreviewMatrix()
-    design_left <- identical(input$design_from_left, "TRUE")
+    design_left <- selectedPlantDisplayFromLeft()
     buildPreviewDisplayMatrix(preview_mat, design_from_left = design_left)
   })
 
@@ -1535,7 +1547,7 @@ buildDesignplotServer <- function(input, output) {
     if ("X" %in% names(sow_df)) {
       x_vals <- suppressWarnings(as.integer(sow_df$X))
       valid_x <- x_vals[!is.na(x_vals) & x_vals > 0]
-      if (length(valid_x) > 0 && !identical(input$design_from_left, "TRUE")) {
+      if (length(valid_x) > 0 && !isTRUE(selectedPlantDisplayFromLeft())) {
         total_cols <- max(valid_x)
         sow_df$X <- mapDisplayColumnNumbers(x_vals, total_cols, design_from_left = FALSE)
       }
@@ -1675,7 +1687,7 @@ buildDesignplotServer <- function(input, output) {
     filename = function() { "plantPreviewDesignplot.xlsx" },
     content = function(file) {
       preview_data <- currentPlantPreviewDisplayMatrix()
-      ref_data <- buildPreviewDisplayMatrix(selectedPlantBaseMatrix(), design_from_left = identical(input$design_from_left, "TRUE"))
+      ref_data <- buildPreviewDisplayMatrix(selectedPlantBaseMatrix(), design_from_left = selectedPlantDisplayFromLeft())
       preview_numeric <- !any(grepl("\\|", as.character(preview_data[, 1:max(1, ncol(preview_data) - STAT_COL_COUNT), drop = FALSE])))
       if (isTRUE(preview_numeric)) {
         writeFormattedXlsx(preview_data, file, highlight_positive = TRUE)
@@ -2178,7 +2190,7 @@ buildDesignplotServer <- function(input, output) {
     plant_matrix <- readPlantTable(selected_table, sqlite_db_path)
     metrics <- computeLayoutPlotMetrics(plant_matrix)
 
-    df_left <- identical(input$design_from_left, "TRUE")
+    df_left <- selectedPlantDisplayFromLeft()
     p <- buildFieldLayoutGgplot(layout_df, plant_matrix, simplified_name, metrics, design_from_left = df_left)
     print(p)
   })
@@ -2201,7 +2213,7 @@ buildDesignplotServer <- function(input, output) {
       plant_matrix <- readPlantTable(selected_table, sqlite_db_path)
       metrics <- computeLayoutPlotMetrics(plant_matrix)
 
-      df_left <- identical(input$design_from_left, "TRUE")
+      df_left <- selectedPlantDisplayFromLeft()
       p <- buildFieldLayoutGgplot(layout_df, plant_matrix, simplified_name, metrics, design_from_left = df_left)
       ggplot2::ggsave(filename = file, plot = p, width = 14, height = 9, dpi = 150)
     }
