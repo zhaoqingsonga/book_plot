@@ -681,20 +681,8 @@ buildDesignplotServer <- function(input, output) {
       error = function(e) validate(need(FALSE, paste0("种植位置设置错误：", e$message)))
     )
 
-    # 从右规划时，镜像列坐标（与田间布局镜像方向一致）
-    # 用户看UI图输入"列1"种最左边的L1，实际对应物理列 max_cols
-    design_from_left <- identical(input$design_from_left, "TRUE")
-    if (!design_from_left) {
-      parsed$start_col <- total_cols + 1 - parsed$start_col
-      parsed$end_col   <- total_cols + 1 - parsed$end_col
-      # 镜像后可能 start > end，需要交换
-      if (parsed$start_col > parsed$end_col) {
-        tmp <- parsed$start_col
-        parsed$start_col <- parsed$end_col
-        parsed$end_col <- tmp
-      }
-    }
-
+    # 从右规划时，田间矩阵已在 designPlot 内部完成镜像，
+    # 用户输入的列坐标直接对应物理列，无需额外映射
     parsed
   })
 
@@ -2123,7 +2111,7 @@ buildDesignplotServer <- function(input, output) {
     plant_matrix <- readPlantTable(selected_table, sqlite_db_path)
     metrics <- computeLayoutPlotMetrics(plant_matrix)
 
-    df_left <- as.logical(input$design_from_left)
+    df_left <- identical(input$design_from_left, "TRUE")
     p <- buildFieldLayoutGgplot(layout_df, plant_matrix, simplified_name, metrics, design_from_left = df_left)
     print(p)
   })
@@ -2146,7 +2134,7 @@ buildDesignplotServer <- function(input, output) {
       plant_matrix <- readPlantTable(selected_table, sqlite_db_path)
       metrics <- computeLayoutPlotMetrics(plant_matrix)
 
-      df_left <- as.logical(input$design_from_left)
+      df_left <- identical(input$design_from_left, "TRUE")
       p <- buildFieldLayoutGgplot(layout_df, plant_matrix, simplified_name, metrics, design_from_left = df_left)
       ggplot2::ggsave(filename = file, plot = p, width = 14, height = 9, dpi = 150)
     }
