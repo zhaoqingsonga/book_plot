@@ -366,13 +366,16 @@ markBlockedAreas<-function(field, total_cols, p_a){
 }
 
 # ============ 蛇形编号：从底部向上交替左右方向填入材料序号 ============
-applySerpentineNumbering<-function(field, total_cols, total_rows, marker1){
+applySerpentineNumbering<-function(field, total_cols, total_rows, marker1, design_from_left=TRUE){
   direction<-1
   num<-1
+  # 从右规划时，第一条数据行从右往左填（seq 从 total_cols 到 1）
+  first_row_dir <- if(isTRUE(design_from_left)) 1 else -1
   for(i in rev(safeSeq(2,total_rows,2))){
     if(direction%%2==marker1){
       filled_count<-0
-      for(j in 1:total_cols){
+      col_seq <- if(direction == 1 && first_row_dir == -1) seq(total_cols, 1, by = -1) else 1:total_cols
+      for(j in col_seq){
         if(field[i,j]==0){field[i,j]<-num; num<-num+1; filled_count<-filled_count+1}
       }
       if(filled_count!=0){direction<-direction+1}
@@ -462,7 +465,7 @@ designPlot<-function(blocks=20,
   field<-fillProtection(field, y, total_rows, blocks, protected_columns, protected_blocks)
   field<-markBlockedAreas(field, y, p_a)
   field<-plantByGroup(field, subg, CODE_GROUP_PAD)
-  field<-applySerpentineNumbering(field, y, total_rows, serpentine_marker)
+  field<-applySerpentineNumbering(field, y, total_rows, serpentine_marker, design_from_left)
   field<-finalizeFieldColumns(field, y)
   return(field)
 }
