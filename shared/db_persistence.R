@@ -1165,6 +1165,20 @@ initDesignplotTables <- function(con) {
   tryCatch({
     DBI::dbExecute(con, "ALTER TABLE designplot_experiment_records ADD COLUMN former_fieldid TEXT")
   }, error = function(e) { message("迁移警告 [former_fieldid]: ", e$message) })
+
+  # 前向同步：确保 experiments 表的试验也存在于 designplot_experiments
+  # （处理旧数据或双重初始化导致的实验只在一张表中的情况）
+  if ("experiments" %in% DBI::dbListTables(con) && "designplot_experiments" %in% DBI::dbListTables(con)) {
+    tryCatch({
+      DBI::dbExecute(con, "
+        INSERT OR IGNORE INTO designplot_experiments
+          (experiment_id, experiment_name, total_rows, created_at, updated_at)
+        SELECT experiment_id, experiment_name, total_rows, created_at, updated_at
+        FROM experiments
+        WHERE experiment_id NOT IN (SELECT experiment_id FROM designplot_experiments)
+      ")
+    }, error = function(e) { message("迁移警告 [前向同步 experiments→designplot_experiments]: ", e$message) })
+  }
 }
 
 # ---- 从试验管理导入单个试验 ----

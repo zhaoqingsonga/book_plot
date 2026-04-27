@@ -417,10 +417,16 @@ renameExperiment <- function(experiment_id, new_experiment_name, db_path = defau
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
   now <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-  updated <- DBI::dbExecute(con,
+  exp_id <- trimws(experiment_id)
+  new_name <- trimws(new_experiment_name)
+  # 同时更新 experiments 和 designplot_experiments（双向同步）
+  DBI::dbExecute(con,
     "UPDATE experiments SET experiment_name = ?, updated_at = ? WHERE experiment_id = ?",
-    params = list(trimws(new_experiment_name), now, trimws(experiment_id)))
-  invisible(updated)
+    params = list(new_name, now, exp_id))
+  DBI::dbExecute(con,
+    "UPDATE designplot_experiments SET experiment_name = ?, updated_at = ? WHERE experiment_id = ?",
+    params = list(new_name, now, exp_id))
+  invisible(0L)
 }
 
 hasExperimentPlantRun <- function(experiment_id, plant_table_name, db_path = defaultSqlitePath()) {
@@ -470,19 +476,6 @@ getExperimentPlantRuns <- function(experiment_id, db_path = defaultSqlitePath())
     params = list(exp_id))
   if (!is.data.frame(runs)) data.frame() else runs
 }
-
-designplotExperimentExists <- function(experiment_id, db_path = defaultSqlitePath()) {
-  exp_id <- trimws(as.character(experiment_id))
-  if (!nzchar(exp_id)) return(FALSE)
-  con <- connectDesignplotDb(db_path)
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-  initDesignplotDb(con)
-  existed <- DBI::dbGetQuery(con,
-    "SELECT 1 AS hit FROM designplot_experiments WHERE experiment_id = ? LIMIT 1",
-    params = list(exp_id))
-  is.data.frame(existed) && nrow(existed) > 0
-}
-
 resetImportedDesignplotExperiment <- function(experiment_id, db_path = defaultSqlitePath()) {
   exp_id <- trimws(as.character(experiment_id))
   if (!nzchar(exp_id)) {
@@ -708,10 +701,13 @@ clearSowTableByPlantTable <- function(plant_table_name, db_path = defaultSqliteP
 
 deleteExperiment <- function(experiment_id, db_path = defaultSqlitePath()) {
   if (is.null(experiment_id) || !nzchar(trimws(experiment_id))) stop("试验ID不能为空")
+  exp_id <- trimws(experiment_id)
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
-  deleted <- DBI::dbExecute(con, "DELETE FROM designplot_experiments WHERE experiment_id = ?", params = list(trimws(experiment_id)))
+  # 同时删除 experiments 和 designplot_experiments（双向同步）
+  DBI::dbExecute(con, "DELETE FROM experiments WHERE experiment_id = ?", params = list(exp_id))
+  deleted <- DBI::dbExecute(con, "DELETE FROM designplot_experiments WHERE experiment_id = ?", params = list(exp_id))
   invisible(deleted)
 }
 
