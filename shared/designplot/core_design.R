@@ -369,19 +369,19 @@ markBlockedAreas<-function(field, total_cols, p_a){
 applySerpentineNumbering<-function(field, total_cols, total_rows, marker1, design_from_left=TRUE){
   direction<-1
   num<-1
-  # 从右规划时，第一条数据行从右往左填（seq 从 total_cols 到 1）
-  first_row_dir <- if(isTRUE(design_from_left)) 1 else -1
+  primary_seq <- if(isTRUE(design_from_left)) 1:total_cols else total_cols:1
+  secondary_seq <- rev(primary_seq)
   for(i in rev(safeSeq(2,total_rows,2))){
     if(direction%%2==marker1){
       filled_count<-0
-      col_seq <- if(direction == 1 && first_row_dir == -1) seq(total_cols, 1, by = -1) else 1:total_cols
+      col_seq <- primary_seq
       for(j in col_seq){
         if(field[i,j]==0){field[i,j]<-num; num<-num+1; filled_count<-filled_count+1}
       }
       if(filled_count!=0){direction<-direction+1}
     }else{
       filled_count<-0
-      for(j in total_cols:1){
+      for(j in secondary_seq){
         if(field[i,j]==0){field[i,j]<-num; num<-num+1; filled_count<-filled_count+1}
       }
       if(filled_count!=0){direction<-direction+1}

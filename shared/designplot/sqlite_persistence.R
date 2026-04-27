@@ -802,19 +802,12 @@ buildSowTable <- function(field_name, base_matrix, planted_matrix = base_matrix)
   field_row_nos[is.na(field_row_nos)] <- seq_len(length(field_row_nos))[is.na(field_row_nos)]
   interval_widths[is.na(interval_widths)] <- 0
 
-  # 预判有多少个有效位置（避免多次 realloc）
   base_sub <- base_matrix[, seq_len(data_cols), drop = FALSE]
   seq_nos_mat <- suppressWarnings(as.numeric(base_sub))
   if (is.null(dim(seq_nos_mat))) dim(seq_nos_mat) <- c(nrow(base_sub), ncol(base_sub))
-  is_valid_seq <- !is.na(seq_nos_mat) & seq_nos_mat > 0
   planted_mat <- planted_matrix[, seq_len(data_cols), drop = FALSE]
-  is_parsed <- vapply(as.vector(planted_mat), function(cell) {
-    !is.null(tryCatch(parseAssignmentCell(cell), error = function(e) NULL))
-  }, logical(1))
-  dim(is_parsed) <- c(nrow(planted_mat), ncol(planted_mat))
-  is_target <- is_valid_seq | is_parsed
-
-  total_cells <- sum(is_target)
+  positions <- which(!is.na(seq_nos_mat) & seq_nos_mat > 0, arr.ind = TRUE)
+  total_cells <- nrow(positions)
   if (total_cells == 0L) {
     return(data.frame(
       Location = character(), ID = character(), Y = integer(), X = integer(),
@@ -833,22 +826,22 @@ buildSowTable <- function(field_name, base_matrix, planted_matrix = base_matrix)
   HangJv <- rep(40, total_cells)
   XiaoQuLiShu <- numeric(total_cells)
 
-  pos <- 1L
-  for (row_idx in seq_len(nrow(base_matrix))) {
-    for (col_idx in seq_len(data_cols)) {
-      if (!is_target[row_idx, col_idx]) next
+  seq_values <- seq_nos_mat[cbind(positions[, 1], positions[, 2])]
+  order_idx <- order(as.integer(seq_values), positions[, 1], positions[, 2])
+  positions <- positions[order_idx, , drop = FALSE]
 
-      seq_no <- seq_nos_mat[row_idx, col_idx]
-      parsed <- tryCatch(parseAssignmentCell(planted_mat[row_idx, col_idx]), error = function(e) NULL)
+  for (pos in seq_len(total_cells)) {
+    row_idx <- positions[pos, 1]
+    col_idx <- positions[pos, 2]
+    seq_no <- seq_nos_mat[row_idx, col_idx]
+    parsed <- tryCatch(parseAssignmentCell(planted_mat[row_idx, col_idx]), error = function(e) NULL)
 
-      ID[pos] <- if (!is.null(parsed)) as.character(parsed$material_name) else as.character(as.integer(seq_no))
-      Y[pos] <- as.integer(field_row_nos[row_idx])
-      X[pos] <- as.integer(col_idx)
-      int_v <- as.numeric(interval_widths[row_idx])
-      XiaoQuChangDu[pos] <- int_v * 100
-      XiaoQuLiShu[pos] <- int_v * 13
-      pos <- pos + 1L
-    }
+    ID[pos] <- if (!is.null(parsed)) as.character(parsed$material_name) else as.character(as.integer(seq_no))
+    Y[pos] <- as.integer(field_row_nos[row_idx])
+    X[pos] <- as.integer(col_idx)
+    int_v <- as.numeric(interval_widths[row_idx])
+    XiaoQuChangDu[pos] <- int_v * 100
+    XiaoQuLiShu[pos] <- int_v * 13
   }
 
   data.frame(

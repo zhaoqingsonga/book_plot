@@ -44,6 +44,11 @@ buildDesignplotServer <- function(input, output) {
       ifelse(nzchar(x), paste0(x, "（补种）"), "补种")
     }
 
+    mapPlotColumns <- function(df) {
+      if (!is.data.frame(df) || nrow(df) == 0) return(df)
+      df
+    }
+
     fill_values <- stats::setNames(as.character(layout_df$color), as.character(layout_df$name))
     fill_values <- fill_values[!duplicated(names(fill_values))]
     fill_values <- fill_values[!is.na(fill_values) & fill_values != "NA"]
@@ -51,6 +56,9 @@ buildDesignplotServer <- function(input, output) {
     exp_df <- layout_df[layout_df$type == "实验", , drop = FALSE]
     special_df <- layout_df[layout_df$type == "特殊区域", , drop = FALSE]
     supplement_df <- layout_df[layout_df$type == "补种", , drop = FALSE]
+    exp_df <- mapPlotColumns(exp_df)
+    special_df <- mapPlotColumns(special_df)
+    supplement_df <- mapPlotColumns(supplement_df)
     if (nrow(supplement_df) > 0) {
       supplement_df$supplement_label <- normalizeSupplementLabel(supplement_df$name)
       supplement_stats <- stats::aggregate(
@@ -96,16 +104,11 @@ buildDesignplotServer <- function(input, output) {
       {
         total <- metrics$total_cols
         step <- max(1, floor(total / 10))
-        if (isTRUE(design_from_left)) {
-          # 从左规划：L1 在左侧（物理列1），每10列递增
-          breaks_vec <- seq(0, total, by = step)
-          labels_vec <- paste0("L", breaks_vec)
+        breaks_vec <- seq(0, total, by = step)
+        labels_vec <- if (isTRUE(design_from_left)) {
+          paste0("L", breaks_vec)
         } else {
-          # 从右规划：L1 在右侧（物理列 total），反向标注
-          # 物理列 y=L1, y-10=L11, y-20=L21, ...
-          # L# = ((total - physical_col) / step) + 1
-          breaks_vec <- rev(seq(0, total, by = step))
-          labels_vec <- paste0("L", ((total - breaks_vec) / step) + 1)
+          paste0("L", total - breaks_vec)
         }
         scale_x_continuous(
           name = "行",
@@ -1433,6 +1436,59 @@ buildDesignplotServer <- function(input, output) {
     selectedPlantBaseMatrix()
   })
 
+  mapDisplayColumnNumbers <- function(cols, total_cols, design_from_left = TRUE) {
+    cols <- suppressWarnings(as.integer(cols))
+    if (isTRUE(design_from_left)) return(cols)
+    as.integer(total_cols - cols + 1L)
+  }
+
+  buildPreviewDisplayMatrix <- function(preview_mat, design_from_left = TRUE) {
+    if (!is.matrix(preview_mat) || ncol(preview_mat) <= 0) return(preview_mat)
+
+    data_cols <- ncol(preview_mat) - STAT_COL_COUNT
+    if (is.na(data_cols) || data_cols <= 0) return(preview_mat)
+
+    display_mat <- preview_mat
+    if (isTRUE(design_from_left)) {
+      colnames(display_mat)[seq_len(data_cols)] <- paste0("L", seq_len(data_cols))
+      return(display_mat)
+    }
+
+    colnames(display_mat)[seq_len(data_cols)] <- paste0("L", rev(seq_len(data_cols)))
+    display_mat
+  }
+
+  buildSimpleDisplayMatrix <- function(simple_mat, full_mat, design_from_left = TRUE) {
+    if (!is.matrix(simple_mat) || ncol(simple_mat) <= 0) return(simple_mat)
+
+    data_cols_full <- ncol(full_mat) - STAT_COL_COUNT
+    data_cols_simple <- ncol(simple_mat) - STAT_COL_COUNT
+    if (is.na(data_cols_full) || data_cols_full <= 0 || is.na(data_cols_simple) || data_cols_simple <= 0) return(simple_mat)
+
+    simple_names <- colnames(simple_mat)[seq_len(data_cols_simple)]
+    original_idx <- suppressWarnings(as.integer(sub("^L", "", simple_names)))
+    if (any(is.na(original_idx))) return(simple_mat)
+
+    display_idx <- mapDisplayColumnNumbers(original_idx, data_cols_full, design_from_left = design_from_left)
+    display_mat <- simple_mat
+    colnames(display_mat)[seq_len(data_cols_simple)] <- paste0("L", display_idx)
+    display_mat
+  }
+
+  currentSimpleDisplayMatrix <- reactive({
+    buildSimpleDisplayMatrix(
+      datasetSelected(),
+      datasetInput(),
+      design_from_left = identical(input$design_from_left, "TRUE")
+    )
+  })
+
+  currentPlantPreviewDisplayMatrix <- reactive({
+    preview_mat <- currentPlantPreviewMatrix()
+    design_left <- identical(input$design_from_left, "TRUE")
+    buildPreviewDisplayMatrix(preview_mat, design_from_left = design_left)
+  })
+
   recordsLatestMap <- reactive({
     recordsTrigger()
     records <- readTableFromSqlite("designplot_experiment_records", sqlite_db_path)
@@ -1475,6 +1531,16 @@ buildDesignplotServer <- function(input, output) {
         sow_df <- sow_df[, ordered, drop = FALSE]
       }
     }
+
+    if ("X" %in% names(sow_df)) {
+      x_vals <- suppressWarnings(as.integer(sow_df$X))
+      valid_x <- x_vals[!is.na(x_vals) & x_vals > 0]
+      if (length(valid_x) > 0 && !identical(input$design_from_left, "TRUE")) {
+        total_cols <- max(valid_x)
+        sow_df$X <- mapDisplayColumnNumbers(x_vals, total_cols, design_from_left = FALSE)
+      }
+    }
+
     sow_df
   })
 
@@ -1604,16 +1670,17 @@ buildDesignplotServer <- function(input, output) {
   # 下载处理器
   # ===========================================================================
   output$simpleDownloadData <- downloadHandler(filename = function() { "simpleDesignplot.xlsx" },
-                                               content = function(file) { writeFormattedXlsx(datasetSelected(), file) })
+                                               content = function(file) { writeFormattedXlsx(currentSimpleDisplayMatrix(), file) })
   output$plantPreviewDownloadData <- downloadHandler(
     filename = function() { "plantPreviewDesignplot.xlsx" },
     content = function(file) {
-      preview_data <- currentPlantPreviewMatrix()
+      preview_data <- currentPlantPreviewDisplayMatrix()
+      ref_data <- buildPreviewDisplayMatrix(selectedPlantBaseMatrix(), design_from_left = identical(input$design_from_left, "TRUE"))
       preview_numeric <- !any(grepl("\\|", as.character(preview_data[, 1:max(1, ncol(preview_data) - STAT_COL_COUNT), drop = FALSE])))
       if (isTRUE(preview_numeric)) {
         writeFormattedXlsx(preview_data, file, highlight_positive = TRUE)
       } else {
-        writeFormattedXlsx(preview_data, file, ref_data = selectedPlantBaseMatrix(), color_planted = FALSE)
+        writeFormattedXlsx(preview_data, file, ref_data = ref_data, color_planted = FALSE)
       }
     }
   )
@@ -1628,15 +1695,15 @@ buildDesignplotServer <- function(input, output) {
     paste("已规划总长", planed, "米。", sep = "")
   })
   output$simpleMydata <- DT::renderDataTable(
-    DT::datatable({ datasetSelected() }, options = list(pageLength = 50, lengthMenu = DT_PAGE_MENU), class = "compact") %>%
-      formatStyle(1:(ncol(datasetSelected()) - STAT_COL_COUNT), backgroundColor = styleInterval(COLOR_BREAKS, COLOR_VALUES))
+    DT::datatable({ currentSimpleDisplayMatrix() }, options = list(pageLength = 50, lengthMenu = DT_PAGE_MENU), class = "compact") %>%
+      formatStyle(1:(ncol(currentSimpleDisplayMatrix()) - STAT_COL_COUNT), backgroundColor = styleInterval(COLOR_BREAKS, COLOR_VALUES))
   )
   output$sta <- DT::renderDataTable(DT::datatable({ datasetStats() }, options = list(pageLength = 5, lengthMenu = DT_PAGE_MENU), class = "compact"))
   contents <- reactive({ req(input$file1); read.xlsx(input$file1$datapath, 1) })
   output$contents <- DT::renderDataTable(DT::datatable({ contents() }, options = list(pageLength = 5, lengthMenu = c(5, 10, 100, 1000, 10000)), class = "compact"))
   output$mydf <- DT::renderDataTable(DT::datatable({ currentSowData() }, options = list(pageLength = 5, lengthMenu = c(5, 15, 30, 100, 1000)), class = "compact"))
   output$selectedPlantPlotPreview <- DT::renderDataTable({
-    preview_mat <- currentPlantPreviewMatrix()
+    preview_mat <- currentPlantPreviewDisplayMatrix()
     validate(need(!is.null(preview_mat) && is.matrix(preview_mat) && ncol(preview_mat) > 0, "暂无可预览的种植地块"))
     DT::datatable(preview_mat, options = list(pageLength = 100, lengthMenu = c(20, 50, 100, 200), scrollX = TRUE, autoWidth = TRUE, dom = "lfrtip"), class = "compact stripe hover") %>%
       formatStyle(columns = 1:ncol(preview_mat), `text-align` = "center") %>%
