@@ -5,6 +5,8 @@
 # 流程：上传 -> 维护 -> 生成记录本
 # =============================================================================
 
+options(shiny.maxRequestSize = 1024 * 1024 * 1024)
+
 library(shiny)
 library(bslib)
 library(shinyjs)
