@@ -140,7 +140,18 @@ server <- function(input, output, session) {
   population_server("pop_mod")
   line_selection_server("line_mod")
   yield_test_server("yield_mod")
-  buildDesignplotServer(input, output)
+  buildDesignplotServer(input, output, session)
+
+  # 中转：mod_experiments 导入成功后向 designplot 发送的 refresh 消息，
+  # 由于 session 隔离，mod_experiments 的 session 无法直接刷新 designplot 的 UI。
+  # 因此让主 session 监听 JS 全局设置的 designplot_refresh input，
+  # 然后通过 designplot server 暴露在 userData 中的函数来触发刷新。
+  observeEvent(input$designplot_refresh, {
+    fn <- session$userData$designplot_refresh_fn
+    if (is.function(fn)) {
+      fn()
+    }
+  })
 
   # --- 数据库导出（downloadHandler） ---
   output$export_sql <- downloadHandler(

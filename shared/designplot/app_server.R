@@ -1,4 +1,4 @@
-buildDesignplotServer <- function(input, output) {
+buildDesignplotServer <- function(input, output, session) {
 
   # ===========================================================================
   # 共享辅助函数
@@ -2218,4 +2218,9 @@ buildDesignplotServer <- function(input, output) {
       ggplot2::ggsave(filename = file, plot = p, width = 14, height = 9, dpi = 150)
     }
   )
+
+  # 暴露 refreshExperiments 给主 session 调用（解决 mod_experiments 跨 session 刷新问题）
+  if (!is.null(session) && is.environment(session) && !is.null(session$userData)) {
+    session$userData$designplot_refresh_fn <- refreshExperiments
+  }
 }
