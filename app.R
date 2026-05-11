@@ -246,11 +246,27 @@ server <- function(input, output, session) {
       db_path <- normalizePath("data/field_book.sqlite", mustWork = FALSE)
 
       # 优先使用 sqlite3 CLI（速度快，470K 行数据秒级导出）
+      # 注意：sqlite3 .dump 本身不包含 DROP TABLE，需要额外添加，否则导入时会因为表已存在而失败
       sqlite3_bin <- Sys.which("sqlite3")
       if (nzchar(sqlite3_bin)) {
-        result <- system2(sqlite3_bin, c(shQuote(db_path), ".dump"),
-                         stdout = file, stderr = NULL)
-        if (result == 0) return()
+        raw_dump <- system2(sqlite3_bin, c(shQuote(db_path), ".dump"),
+                           stdout = TRUE, stderr = NULL)
+        # status 属性为 NULL 表示成功，0 或非 NULL 表示失败
+        if (is.null(attr(raw_dump, "status")) && length(raw_dump) > 0) {
+          # 在每个 CREATE TABLE 前添加 DROP TABLE IF EXISTS
+          lines <- raw_dump
+          new_lines <- c()
+          for (i in seq_along(lines)) {
+            if (grepl("^CREATE TABLE", lines[i])) {
+              # 提取表名：CREATE TABLE table_name (
+              tbl_name <- sub("^CREATE TABLE\\s+(\\S+)\\s*\\(.*$", "\\1", lines[i], perl = TRUE)
+              new_lines <- c(new_lines, paste0("DROP TABLE IF EXISTS `", tbl_name, "`;"))
+            }
+            new_lines <- c(new_lines, lines[i])
+          }
+          writeLines(new_lines, file)
+          return()
+        }
       }
 
       # 降级方案：基于 R 的批量导出（无 sqlite3 CLI 时使用）
