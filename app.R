@@ -313,27 +313,38 @@ server <- function(input, output, session) {
       db_path <- normalizePath("data/field_book.sqlite", mustWork = FALSE)
       sql_path <- input$import_sql$datapath
 
-      # 优先使用 sqlite3 CLI（正确处理含分号的 JSON 字段）
       sqlite3_bin <- Sys.which("sqlite3")
       if (nzchar(sqlite3_bin)) {
-        import_cmd <- paste0(".read ", shQuote(sql_path))
-        result <- system2(sqlite3_bin, c(shQuote(db_path)),
-                         input = import_cmd, stdout = TRUE, stderr = TRUE,
-                         wait = TRUE)
-        # 判断成功：stdout 为空（character(0)）且 exit code 为 0
-        if (identical(result, character(0)) && is.null(attr(result, "status"))) {
+        # 备份当前数据库（失败时可恢复）
+        backup_path <- paste0(db_path, ".backup_", format(Sys.time(), "%Y%m%d_%H%M%S"))
+        had_backup <- FALSE
+        if (file.exists(db_path)) {
+          file.copy(db_path, backup_path, overwrite = TRUE)
+          had_backup <- TRUE
+        }
+
+        # 用 sqlite3 shell redirect 导入 —— 正确处理含分号、引号、JSON 等复杂数据
+        cmd <- paste(shQuote(sqlite3_bin), shQuote(db_path), "<", shQuote(sql_path))
+        result <- system(cmd)
+
+        if (result == 0) {
+          if (had_backup) file.remove(backup_path)
           showNotification("数据库导入成功！页面将刷新...", type = "message")
           Sys.sleep(1)
           shinyjs::js$refresh()
           return()
         }
-        # 如果 CLI 失败，打印错误信息，fall through 到 R 方案
-        if (length(result) > 0) {
-          warning(paste("sqlite3 CLI 导入失败:", paste(result, collapse = "\n")))
+
+        # 导入失败，恢复备份
+        if (had_backup && file.exists(backup_path)) {
+          if (file.exists(db_path)) file.remove(db_path)
+          file.rename(backup_path, db_path)
         }
+        stop("sqlite3 CLI 导入失败，已恢复原始数据")
       }
 
-      # 降级方案：R 批量导入（对含分号的 JSON 字段会出错，仅作备用）
+      # 降级方案：R 批量导入（仅当 sqlite3 CLI 不可用时使用）
+      # 注意：此方式会用 ; 切割 SQL，若数据字段含分号会导致数据丢失
       con <- dbConnect(RSQLite::SQLite(), db_path)
       on.exit(dbDisconnect(con))
       sql_content <- readLines(sql_path, warn = FALSE)
