@@ -802,11 +802,39 @@ buildSowTable <- function(field_name, base_matrix, planted_matrix = base_matrix)
   field_row_nos[is.na(field_row_nos)] <- seq_len(length(field_row_nos))[is.na(field_row_nos)]
   interval_widths[is.na(interval_widths)] <- 0
 
-  base_sub <- base_matrix[, seq_len(data_cols), drop = FALSE]
-  seq_nos_mat <- suppressWarnings(as.numeric(base_sub))
-  if (is.null(dim(seq_nos_mat))) dim(seq_nos_mat) <- c(nrow(base_sub), ncol(base_sub))
+  # 从 planted_matrix 提取序号（含 "123" 纯数字 与 "name|N|123" 种植后两种格式）
+  extractSeqNo <- function(x) {
+    txt <- trimws(as.character(x))
+    if (!nzchar(txt)) return(NA_integer_)
+    # 纯正整数（未种编号）
+    if (grepl("^[0-9]+$", txt)) {
+      val <- suppressWarnings(as.integer(txt))
+      return(if (!is.na(val) && val > 0L) val else NA_integer_)
+    }
+    # "材料|子行|序号" 格式（已种）
+    parts <- strsplit(txt, "|", fixed = TRUE)[[1]]
+    if (length(parts) >= 3L) {
+      val <- suppressWarnings(as.integer(parts[3]))
+      return(if (!is.na(val) && val > 0L) val else NA_integer_)
+    }
+    NA_integer_
+  }
+
+  planted_sub <- planted_matrix[, seq_len(data_cols), drop = FALSE]
+  seq_nos_mat <- matrix(NA_integer_, nrow = nrow(planted_sub), ncol = ncol(planted_sub))
+  for (c in seq_len(ncol(planted_sub))) {
+    # 快速路径：整列都是数字
+    num_try <- suppressWarnings(as.integer(planted_sub[, c]))
+    if (!anyNA(num_try)) {
+      seq_nos_mat[, c] <- num_try
+    } else {
+      seq_nos_mat[, c] <- vapply(planted_sub[, c], extractSeqNo, integer(1L))
+    }
+  }
+
   planted_mat <- planted_matrix[, seq_len(data_cols), drop = FALSE]
-  positions <- which(!is.na(seq_nos_mat) & seq_nos_mat > 0, arr.ind = TRUE)
+  seq_nos_mat_num <- matrix(as.numeric(seq_nos_mat), nrow = nrow(seq_nos_mat), ncol = ncol(seq_nos_mat))
+  positions <- which(!is.na(seq_nos_mat_num) & seq_nos_mat_num > 0, arr.ind = TRUE)
   total_cells <- nrow(positions)
   if (total_cells == 0L) {
     return(data.frame(

@@ -1,5 +1,5 @@
 # =============================================================================
-# 田间记录本生成器 - Shiny App
+# 田间记录本生成及田间规划 - Shiny App
 # 基于soyplant库的田间试验规划工具
 # 支持三种记录本类型：群体、株行、产比
 # 流程：上传 -> 维护 -> 生成记录本
@@ -49,13 +49,14 @@ fb_theme <- bs_theme(
 # === UI 定义 ===
 
 ui <- navbarPage(
-  title = "田间记录本生成器",
+  title = div(icon("seedling"), "田间记录本生成及田间规划"),
   id = "main_nav",
   theme = fb_theme,
 
   header = tags$head(
     includeCSS("www/styles.css"),
-    includeScript("www/custom-handlers.js")
+    includeScript("www/custom-handlers.js"),
+    tags$link(rel = "icon", href = "soybean.svg", type = "image/svg+xml")
   ),
 
   useShinyjs(),
@@ -99,8 +100,8 @@ ui <- navbarPage(
       # ---- Hero Banner ----
       div(class = "about-hero",
         div(class = "about-hero-content",
-          div(class = "about-hero-icon", "🌾"),
-          h2("田间记录本生成器"),
+          div(class = "about-hero-icon", icon("seedling")),
+          h2("田间记录本生成及田间规划"),
           p(class = "about-hero-version", "v2.0"),
           p(class = "about-hero-desc",
             "基于 soyplant 库的田间试验规划工具，一站式完成群体、株行、产比三种记录本的生成与管理。"
@@ -185,7 +186,7 @@ ui <- navbarPage(
         ),
         hr(),
         p(style = "text-align: center; color: #888; font-size: 0.85em; margin: 0;",
-          "© 2024 田间记录本生成器 — 为作物育种田间试验而生")
+          "© 2024 田间记录本生成及田间规划 — 为作物育种田间试验而生")
       )
     )
   )

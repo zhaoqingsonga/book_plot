@@ -49,7 +49,11 @@ extractPlantingTargets<-function(field, start_row=1, start_col=1, end_row=NULL, 
   if(end_col < 1 || end_col > data_cols) stop(paste0("种植终止列必须在 1 到 ", data_cols, " 之间"))
   if(start_col > end_col) stop("种植起始列不能大于终止列")
 
-  positions<-which(field[,start_col:end_col, drop=FALSE] > 0, arr.ind=TRUE)
+  field_sub <- field[, start_col:end_col, drop = FALSE]
+  # 健壮检测：支持纯数字与字符矩阵（种植后列会变字符型）
+  num_try <- suppressWarnings(matrix(as.integer(field_sub), nrow = nrow(field_sub), ncol = ncol(field_sub)))
+  has_pipe <- grepl("\\|", field_sub, fixed = TRUE)
+  positions <- which(!is.na(num_try) & num_try > 0L & !has_pipe, arr.ind = TRUE)
   if(nrow(positions)==0){
     return(data.frame(
       seq_no=integer(),
