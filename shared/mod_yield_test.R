@@ -121,8 +121,8 @@ yield_test_ui <- function(id) {
                     p("1重复=顺序；2-3重复=随机", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     numericInput(ns("digits"), "编号位数", value = 3, min = 1, width = "100%"),
                     p("材料编号的数字位数", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
-                    numericInput(ns("rows"), "材料种植行数", value = 4, min = 1, width = "100%"),
-                    p("每个品种的种植行数", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    textInput(ns("rows"), "材料种植行数", value = "4", width = "100%"),
+                    p("多个地点用空格分隔，如：4 4 6", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     textInput(ns("prefix"), "材料前缀", value = "", width = "100%"),
                     p("材料编号的前缀", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     checkboxInput(ns("ckfixed"), "对照固定", value = TRUE),
@@ -840,7 +840,7 @@ yield_test_server <- function(id) {
         all_planted <- list()
         for (i in seq_along(location_vec)) {
           # 获取当前地点的行数：一个数=所有地点相同，否则取第i个
-          rows_val <- if (length(rows_vec) == 1) rows_vec[1] else if (i <= length(rows_vec)) rows_vec[i] else rows_vec[1]
+          rows_val <- if (length(rows_vec) == 1) as.numeric(rows_vec[1]) else if (i <= length(rows_vec)) as.numeric(rows_vec[i]) else as.numeric(rows_vec[1])
           planted_loc <- mydata %>% planting(
             interval = input$interval, s_prefix = input$prefix,
             place = location_vec[i], rp = input$rp,
