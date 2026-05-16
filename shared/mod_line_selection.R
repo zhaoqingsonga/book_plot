@@ -113,15 +113,16 @@ line_selection_ui <- function(id) {
                     "种植参数",
                     textInput(ns("ck"), "对照品种", value = "", width = "100%"),
                     p("注：填写后会在最后添加一行对照，空格分隔多个", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
-                    numericInput(ns("interval"), "对照间隔数", value = NULL, min = 1, width = "100%"),
-                    p("每隔N行插入一行对照", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    numericInput(ns("interval"), "对照间隔数", value = 0, min = 0, width = "100%"),
+                    p("每隔N个材料插入一行对照", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    p("间隔数为0，则表示不插入对照", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     numericInput(ns("rp"), "重复数", value = 1, min = 1, width = "100%"),
                     p("1重复=顺序；2-3重复=随机", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     numericInput(ns("digits"), "编号位数", value = 4, min = 1, width = "100%"),
                     p("材料编号的数字位数", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     numericInput(ns("rows"), "材料种植行数", value = 1, min = 1, width = "100%"),
                     p("每个材料的种植行数", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
-                    textInput(ns("prefix"), "材料前缀", value = "N25bL", width = "100%"),
+                    textInput(ns("prefix"), "材料前缀", value = "", width = "100%"),
                     p("材料编号的前缀", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     textInput(ns("location"), "试验地点", value = "安徽宿州", width = "100%"),
                     p("空格分隔多个地点", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
@@ -671,7 +672,7 @@ line_selection_server <- function(id) {
       updateNumericInput(session, "rp", value = 1)
       updateNumericInput(session, "digits", value = 4)
       updateNumericInput(session, "rows", value = 1)
-      updateTextInput(session, "prefix", value = "N25bL")
+      updateTextInput(session, "prefix", value = "")
       updateTextInput(session, "location", value = "安徽宿州")
       updateCheckboxInput(session, "ckfixed", value = TRUE)
       updateNumericInput(session, "startN", value = 1)
@@ -713,6 +714,12 @@ line_selection_server <- function(id) {
 
     observeEvent(input$btn_generate, {
       req(rv$selected_exp, rv$materials)
+
+      # 验证材料前缀
+      if (is.null(input$prefix) || input$prefix == "") {
+        showNotification("材料前缀不能为空", type = "error")
+        return()
+      }
 
       # 检查是否已生成
       exp_record <- rv$records[rv$records$experiment_id == rv$selected_exp, ]

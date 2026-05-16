@@ -88,7 +88,7 @@ ui <- navbarPage(
 
   # === 5. 田间种植 ===
   tabPanel(
-    "🌱 田间种植",
+    "田间种植",
     icon = icon("seedling"),
     buildDesignplotUI()
   ),

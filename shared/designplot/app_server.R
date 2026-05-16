@@ -833,25 +833,7 @@ buildDesignplotServer <- function(input, output, session) {
 
   countPlantingTargets <- function(field, start_row = 1, start_col = 1, end_row = NULL, end_col = NULL) {
     if (is.null(field) || !is.matrix(field) || ncol(field) <= STAT_COL_COUNT) return(0L)
-    data_cols <- ncol(field) - STAT_COL_COUNT
-    rowno_idx <- ncol(field) - STAT_COL_OFFSET_ROWNO
-    rowno_vec <- suppressWarnings(as.numeric(field[, rowno_idx]))
-    valid_rows <- rowno_vec[!is.na(rowno_vec)]
-    max_row <- if (length(valid_rows) > 0) max(valid_rows) else nrow(field)
-    if (is.null(end_row)) end_row <- max_row
-    if (is.null(end_col)) end_col <- data_cols
-
-    remaining <- 0L
-    for (r in seq_len(nrow(field))) {
-      row_no <- suppressWarnings(as.numeric(field[r, rowno_idx]))
-      if (is.na(row_no) || row_no < start_row || row_no > end_row) next
-      for (c in seq_len(data_cols)) {
-        if (c < start_col || c > end_col) next
-        cell_text <- trimws(as.character(field[r, c]))
-        if (grepl("^[0-9]+$", cell_text)) remaining <- remaining + 1L
-      }
-    }
-    as.integer(remaining)
+    nrow(extractPlantingTargets(field, start_row = start_row, start_col = start_col, end_row = end_row, end_col = end_col))
   }
 
   countSeedDemand <- function(seed_df) {
