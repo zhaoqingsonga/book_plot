@@ -130,6 +130,10 @@ line_selection_ui <- function(id) {
                     p("固定则按间隔插入；不固定则随机插入", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     checkboxInput(ns("first_as_ck"), "首记录是否对照", value = FALSE),
                     p("勾选则首个记录插入对照行", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    checkboxInput(ns("fix_enabled"), "固定材料位置（跨重复不随机）", value = FALSE),
+                    p("勾选后，指定材料在每重复中保持同一位", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    textInput(ns("fixed_materials"), "固定材料", value = "", width = "100%"),
+                    p("输入材料名称，空格分隔", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     numericInput(ns("startN"), "起始编号", value = 1, min = 1, width = "100%"),
                     p("fieldid起始编号", class = "text-muted", style = "font-size: 12px; margin-top: -3px;")
                   ),
@@ -863,13 +867,13 @@ line_selection_server <- function(id) {
             first_as_ck = input$first_as_ck
           )
 
-          # 从mydata合并额外字段到planted
+          # 从mydata合并额外字段到planted（用 name+ma+pa 作为合并键，不能用code）
           # 保存原始 is_ck，merge 会覆盖它
           original_is_ck <- planted_loc$is_ck
           extra_cols <- setdiff(names(mydata), names(planted_loc))
           if (length(extra_cols) > 0) {
-            if ("code" %in% names(planted_loc) && "code" %in% names(mydata)) {
-              merge_keys <- c("code", "ma", "pa")
+            if (all(c("name", "ma", "pa") %in% names(planted_loc))) {
+              merge_keys <- c("name", "ma", "pa")
               merge_keys <- merge_keys[merge_keys %in% names(planted_loc) & merge_keys %in% names(mydata)]
               if (length(merge_keys) > 0) {
                 planted_loc <- merge(planted_loc, mydata[, c(merge_keys, extra_cols), drop = FALSE],
@@ -879,6 +883,19 @@ line_selection_server <- function(id) {
           }
           # 恢复原始 is_ck
           planted_loc$is_ck <- original_is_ck
+
+          # 按fieldid排序，保证fieldid顺序排列（merge会打乱顺序）
+          planted_loc <- planted_loc[order(planted_loc$fieldid), ]
+          rownames(planted_loc) <- NULL
+
+          # 固定材料位置：跨重复保持同一位（在 fieldid 排序之后进行）
+          if (isTRUE(input$fix_enabled) && nzchar(trimws(input$fixed_materials))) {
+            fixed_names <- trimws(unlist(strsplit(trimws(input$fixed_materials), " +")))
+            fixed_names <- fixed_names[nzchar(fixed_names)]
+            if (length(fixed_names) > 0) {
+              planted_loc <- fixMaterialPositions(planted_loc, fixed_names)
+            }
+          }
 
           all_planted[[i]] <- planted_loc
           # 间隔1.2秒确保fieldid不同
@@ -958,15 +975,17 @@ line_selection_server <- function(id) {
 
         # 解析错误信息，转换为用户可理解的中文
         err_msg <- e$message
-        user_msg <- switch(err_msg,
+        user_msg <-
           if (grepl("get_plant|get_line", err_msg, ignore.case = TRUE)) {
-            "数据处理失败，请检查数据中是否包含必要的列（ma, pa, name等）"
+            paste0(
+              "数据处理失败，请检查数据中是否包含必要的列（ma, pa, name等）。\n",
+              "原始错误信息：", err_msg
+            )
           } else if (grepl("缺少必要列", err_msg)) {
             paste0("缺少必要列：", gsub(", ", "、", err_msg))
           } else {
             paste0("生成失败：", err_msg)
           }
-        )
 
         tryCatch({
           shinyjs::html(ns("gen_result"), paste0(

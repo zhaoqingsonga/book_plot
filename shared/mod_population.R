@@ -132,6 +132,10 @@ population_ui <- function(id) {
                     p("固定则按间隔插入；不固定则随机插入", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     checkboxInput(ns("first_as_ck"), "首记录是否对照", value = FALSE),
                     p("勾选则首个记录插入对照行", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    checkboxInput(ns("fix_enabled"), "固定材料位置（跨重复不随机）", value = FALSE),
+                    p("勾选后，指定材料在每重复中保持同一位", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    textInput(ns("fixed_materials"), "固定材料", value = "", width = "100%"),
+                    p("输入材料名称，空格分隔", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     numericInput(ns("startN"), "起始编号", value = 1, min = 1, width = "100%"),
                     p("fieldid起始编号", class = "text-muted", style = "font-size: 12px; margin-top: -3px;")
                   ),
@@ -910,14 +914,14 @@ population_server <- function(id) {
             first_as_ck = input$first_as_ck
           )
 
-          # 从mydata合并额外字段到planted
+          # 从mydata合并额外字段到planted（用 name+ma+pa 作为合并键，不能用code）
           # 保存原始 is_ck，merge 会覆盖它
           original_is_ck <- planted_loc$is_ck
           extra_cols <- setdiff(names(mydata), names(planted_loc))
           if (length(extra_cols) > 0) {
-            if ("code" %in% names(planted_loc) && "code" %in% names(mydata)) {
-              merge_keys <- c("code", "ma", "pa")
-              merge_keys <- merge_keys[merge_keys %in% names(planted_loc) & merge_keys %in% names(mydata)]
+            if (all(c("name", "ma", "pa") %in% names(planted_loc))) {
+              # 用 name 作为主键（唯一标识），避免 ma/pa 重复导致笛卡尔积
+              merge_keys <- c("name", "ma", "pa")
               if (length(merge_keys) > 0) {
                 planted_loc <- merge(planted_loc, mydata[, c(merge_keys, extra_cols), drop = FALSE],
                                  by = merge_keys, all.x = TRUE, sort = FALSE)
@@ -972,6 +976,18 @@ population_server <- function(id) {
             planted_loc$line_number[idx] <- paste0(pos, "-", pos + actual_rows_i - 1)
             pos <- pos + actual_rows_i
           }
+          # 固定材料位置：跨重复保持同一位
+          if (isTRUE(input$fix_enabled) && nzchar(trimws(input$fixed_materials))) {
+            fixed_names <- trimws(unlist(strsplit(trimws(input$fixed_materials), " +")))
+            fixed_names <- fixed_names[nzchar(fixed_names)]
+            if (length(fixed_names) > 0) {
+              planted_loc <- fixMaterialPositions(planted_loc, fixed_names)
+            }
+          }
+
+          # 按fieldid排序，保证fieldid顺序排列
+          planted_loc <- planted_loc[order(planted_loc$fieldid), ]
+          rownames(planted_loc) <- NULL
           all_planted[[i]] <- planted_loc
           # 间隔1.2秒确保fieldid不同
           if (i < length(location_vec)) Sys.sleep(FIELDID_DELAY_SECONDS)
@@ -1038,8 +1054,7 @@ population_server <- function(id) {
 
         # 解析错误信息，转换为用户可理解的中文
         err_msg <- e$message
-        user_msg <- switch(err_msg,
-          # get_population 错误
+        user_msg <-
           if (grepl("No selected population", err_msg, ignore.case = TRUE)) {
             "未找到有效的群体数据，请检查：\n1. 数据中是否包含f世代列\n2. stageid列是否包含F1/F2等世代标识\n3. 母本(ma)和父本(pa)列是否有数据"
           } else if (grepl("缺少必要列", err_msg)) {
@@ -1057,10 +1072,8 @@ population_server <- function(id) {
               "2. 该试验的new_rows是否都为0或空值"
             )
           } else {
-            # 通用错误
             paste0("生成失败：", err_msg)
           }
-        )
 
         # 尝试在UI中显示错误信息
         tryCatch({
