@@ -127,6 +127,8 @@ yield_test_ui <- function(id) {
                     p("材料编号的前缀", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     checkboxInput(ns("ckfixed"), "对照固定", value = TRUE),
                     p("固定则按间隔插入；不固定则随机插入", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    checkboxInput(ns("first_as_ck"), "首记录是否对照", value = FALSE),
+                    p("勾选则首个记录插入对照行", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     numericInput(ns("startN"), "起始编号", value = 1, min = 1, width = "100%"),
                     p("fieldid起始编号", class = "text-muted", style = "font-size: 12px; margin-top: -3px;")
                   ),
@@ -843,7 +845,8 @@ yield_test_server <- function(id) {
             interval = input$interval, s_prefix = input$prefix,
             place = location_vec[i], rp = input$rp,
             digits = input$digits, ck = ck_by_place[[i]], rows = rows_val,
-            ckfixed = input$ckfixed, restartfid = TRUE, startN = input$startN
+            ckfixed = input$ckfixed, restartfid = TRUE, startN = input$startN,
+            first_as_ck = input$first_as_ck
           )
 
           # 从mydata合并额外字段到planted（planting可能不返回所有原始字段）
