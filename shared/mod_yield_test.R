@@ -754,19 +754,17 @@ yield_test_server <- function(id) {
         db_cols <- DB_MATERIAL_COLS
         mydata <- mydata[, !names(mydata) %in% db_cols, drop = FALSE]
 
-        # 确保ma和pa列存在并填充默认值
+        # 确保ma和pa列存在并填充默认值（处理NA和空字符串）
         if (!"ma" %in% names(mydata)) {
           mydata$ma <- "未知"
         } else {
-          mydata$ma[is.na(mydata$ma)] <- "未知"
+          mydata$ma[is.na(mydata$ma) | nchar(mydata$ma) == 0] <- "未知"
         }
         if (!"pa" %in% names(mydata)) {
           mydata$pa <- "未知"
         } else {
-          mydata$pa[is.na(mydata$pa)] <- "未知"
+          mydata$pa[is.na(mydata$pa) | nchar(mydata$pa) == 0] <- "未知"
         }
-
-        # 确保ma和pa是字符型
         mydata$ma <- as.character(mydata$ma)
         mydata$pa <- as.character(mydata$pa)
 

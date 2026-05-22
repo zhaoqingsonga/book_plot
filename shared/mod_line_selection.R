@@ -795,10 +795,17 @@ line_selection_server <- function(id) {
           stop("筛选后没有数据，请检查sele列的值是否大于0")
         }
 
-        origin$ma[is.na(origin$ma)] <- "未知"
-        origin$pa[is.na(origin$pa)] <- "未知"
-
-        # 确保ma和pa是字符型
+        # 确保ma和pa列存在并填充默认值（处理NA和空字符串）
+        if (!"ma" %in% names(origin)) {
+          origin$ma <- "未知"
+        } else {
+          origin$ma[is.na(origin$ma) | nchar(origin$ma) == 0] <- "未知"
+        }
+        if (!"pa" %in% names(origin)) {
+          origin$pa <- "未知"
+        } else {
+          origin$pa[is.na(origin$pa) | nchar(origin$pa) == 0] <- "未知"
+        }
         origin$ma <- as.character(origin$ma)
         origin$pa <- as.character(origin$pa)
 

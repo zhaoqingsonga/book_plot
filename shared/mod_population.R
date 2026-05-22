@@ -779,7 +779,17 @@ population_server <- function(id) {
           mydata <- mydata[mydata$f >= input$min_f & mydata$f <= input$max_f, ]
         }
 
-        # 确保ma和pa是字符型（不替换NA为"未知"，保持原始值以便combination_matrix正确处理）
+        # 确保ma和pa列存在并填充默认值（处理NA和空字符串）
+        if (!"ma" %in% names(mydata)) {
+          mydata$ma <- "未知"
+        } else {
+          mydata$ma[is.na(mydata$ma) | nchar(mydata$ma) == 0] <- "未知"
+        }
+        if (!"pa" %in% names(mydata)) {
+          mydata$pa <- "未知"
+        } else {
+          mydata$pa[is.na(mydata$pa) | nchar(mydata$pa) == 0] <- "未知"
+        }
         mydata$ma <- as.character(mydata$ma)
         mydata$pa <- as.character(mydata$pa)
 
