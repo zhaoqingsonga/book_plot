@@ -97,16 +97,13 @@ initDb <- function(con) {
     )
   ")
 
-  # 迁移：为已有表添加 raw_data 列（如果不存在）
-  tryCatch({
-    DBI::dbExecute(con, "ALTER TABLE population_records ADD COLUMN raw_data TEXT")
-  }, error = function(e) { message("迁移警告 [population_records.raw_data]: ", e$message) })
-  tryCatch({
-    DBI::dbExecute(con, "ALTER TABLE line_selection_records ADD COLUMN raw_data TEXT")
-  }, error = function(e) { message("迁移警告 [line_selection_records.raw_data]: ", e$message) })
-  tryCatch({
-    DBI::dbExecute(con, "ALTER TABLE yield_test_records ADD COLUMN raw_data TEXT")
-  }, error = function(e) { message("迁移警告 [yield_test_records.raw_data]: ", e$message) })
+  # 迁移：为已有表添加 raw_data 列（仅当列不存在时添加）
+  for (tbl in c("population_records", "line_selection_records", "yield_test_records")) {
+    existing_cols <- DBI::dbGetQuery(con, paste0("PRAGMA table_info(", tbl, ")"))$name
+    if (!"raw_data" %in% existing_cols) {
+      DBI::dbExecute(con, paste0("ALTER TABLE ", tbl, " ADD COLUMN raw_data TEXT"))
+    }
+  }
 
   # 群体材料明细表
   DBI::dbExecute(con, "
@@ -406,13 +403,14 @@ initDb <- function(con) {
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_line_field_exp ON line_selection_field_records(experiment_id)")
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_yield_field_exp ON yield_test_field_records(experiment_id)")
 
-  # 列迁移：添加planting表的完整字段（如果表已存在但缺少这些列）
+  # 列迁移：添加planting表的完整字段（仅当列不存在时添加）
   new_cols <- c("id", "user", "memo", "stage", "next_stage", "f", "process", "path", "source", "former_fieldid", "former_stageid", "treatment", "is_ck")
   for (tbl in c("population_field_records", "line_selection_field_records", "yield_test_field_records")) {
+    existing_cols <- DBI::dbGetQuery(con, paste0("PRAGMA table_info(", tbl, ")"))$name
     for (col in new_cols) {
-      tryCatch({
+      if (!col %in% existing_cols) {
         DBI::dbExecute(con, paste0("ALTER TABLE ", tbl, " ADD COLUMN ", col, " TEXT"))
-      }, error = function(e) { message("迁移警告 [", tbl, ".", col, "]: ", e$message) })
+      }
     }
   }
 }
@@ -1150,21 +1148,26 @@ initDesignplotTables <- function(con) {
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dp_exp_id ON designplot_experiment_records(experiment_id)")
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_dp_exp_name ON designplot_experiments(experiment_name)")
 
-  # 迁移：为已有表添加 source_type 和 source_id 列（如果不存在）
-  tryCatch({
-    DBI::dbExecute(con, "ALTER TABLE designplot_experiments ADD COLUMN source_type TEXT CHECK(source_type IN ('population', 'line_selection', 'yield_test'))")
-  }, error = function(e) { message("迁移警告 [source_type]: ", e$message) })
-  tryCatch({
-    DBI::dbExecute(con, "ALTER TABLE designplot_experiments ADD COLUMN source_id TEXT")
-  }, error = function(e) { message("迁移警告 [source_id]: ", e$message) })
-  # 迁移：为 designplot_experiment_records 添加 place 列（如果不存在）
-  tryCatch({
-    DBI::dbExecute(con, "ALTER TABLE designplot_experiment_records ADD COLUMN place TEXT")
-  }, error = function(e) { message("迁移警告 [place]: ", e$message) })
-  # 迁移：为 designplot_experiment_records 添加 former_fieldid 列（如果不存在）
-  tryCatch({
-    DBI::dbExecute(con, "ALTER TABLE designplot_experiment_records ADD COLUMN former_fieldid TEXT")
-  }, error = function(e) { message("迁移警告 [former_fieldid]: ", e$message) })
+  # 迁移：为已有表添加 source_type 和 source_id 列（仅当列不存在时添加）
+  {
+    dp_exp_cols <- DBI::dbGetQuery(con, "PRAGMA table_info(designplot_experiments)")$name
+    if (!"source_type" %in% dp_exp_cols) {
+      DBI::dbExecute(con, "ALTER TABLE designplot_experiments ADD COLUMN source_type TEXT CHECK(source_type IN ('population', 'line_selection', 'yield_test'))")
+    }
+    if (!"source_id" %in% dp_exp_cols) {
+      DBI::dbExecute(con, "ALTER TABLE designplot_experiments ADD COLUMN source_id TEXT")
+    }
+  }
+  # 迁移：为 designplot_experiment_records 添加 place / former_fieldid 列
+  {
+    dp_rec_cols <- DBI::dbGetQuery(con, "PRAGMA table_info(designplot_experiment_records)")$name
+    if (!"place" %in% dp_rec_cols) {
+      DBI::dbExecute(con, "ALTER TABLE designplot_experiment_records ADD COLUMN place TEXT")
+    }
+    if (!"former_fieldid" %in% dp_rec_cols) {
+      DBI::dbExecute(con, "ALTER TABLE designplot_experiment_records ADD COLUMN former_fieldid TEXT")
+    }
+  }
 
   # 前向同步：确保 experiments 表的试验也存在于 designplot_experiments
   # （处理旧数据或双重初始化导致的实验只在一张表中的情况）
