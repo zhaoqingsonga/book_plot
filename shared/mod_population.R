@@ -142,8 +142,8 @@ population_ui <- function(id) {
                   # === 折叠面板：世代筛选 ===
                   accordion_panel(
                     "世代筛选",
-                    numericInput(ns("min_f"), "最小世代", value = 0, min = 0, max = 7, width = "100%"),
-                    numericInput(ns("max_f"), "最大世代", value = 6, min = 1, max = 7, width = "100%")
+                    numericInput(ns("min_f"), "最小世代", value = 0, min = 0, max = 9, width = "100%"),
+                    numericInput(ns("max_f"), "最大世代", value = 6, min = 1, max = 9, width = "100%")
                   ),
                   open = FALSE  # 默认折叠
                 ),
@@ -430,14 +430,31 @@ population_server <- function(id) {
 
       df <- rv$records
       df$has_generated <- ifelse(df$has_generated == 1, "已生成", "未生成")
-      df$created_at <- substr(df$created_at, 1, 19)
+      df$created_at <- substr(df$created_at, 1, 10)
       df$操作 <- fb_record_list_delete_buttons(df$experiment_id, ns)
 
-      cols <- c("experiment_id", "experiment_name", "total_rows", "has_generated", "created_at", "操作")
+      cols <- c("experiment_name", "total_rows", "has_generated", "created_at", "操作")
       DT::datatable(df[, cols],
         selection = "single",
-        escape = setdiff(cols, "操作"),
-        options = list(pageLength = 10, dom = 'frtip'),
+        escape = setdiff(cols, c("experiment_name", "操作")),
+        options = list(
+          pageLength = 10,
+          dom = 'frtip',
+          columnDefs = list(
+            list(
+              targets = 1,
+              render = JS(
+                "function(data, type, row, meta) {
+                  if (type === 'display' && data != null) {
+                    var safe = String(data).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');
+                    return '<div title=\"' + safe + '\" style=\"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;\">' + safe + '</div>';
+                  }
+                  return data;
+                }"
+              )
+            )
+          )
+        ),
         class = "compact stripe hover"
       )
     })
