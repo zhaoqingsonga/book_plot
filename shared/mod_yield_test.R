@@ -113,7 +113,9 @@ yield_test_ui <- function(id) {
                     textInput(ns("location"), "试验地点", value = "安徽宿州", width = "100%"),
                     p("多个地点用空格分隔", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     textInput(ns("ck"), "对照品种", value = "", width = "100%"),
-                    p("多个地点用空格分离", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    p("同一地点多个对照用 | 分隔，不同地点用空格分隔。例：", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    p("  「冀豆12|冀豆17」→ 每组后连续插入冀豆12和冀豆17（2个对照）", class = "text-muted", style = "font-size: 12px; margin-top: 0px;"),
+                    p("  「冀豆12|冀豆17 齐黄34」→ 地点1插冀豆12+冀豆17，地点2插齐黄34", class = "text-muted", style = "font-size: 12px; margin-top: 0px;"),
                     numericInput(ns("interval"), "对照间隔数", value = 19, min = 0, width = "100%"),
                     p("每隔N个材料插入一行对照", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     p("间隔数为0，则表示不插入对照", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
@@ -822,40 +824,14 @@ yield_test_server <- function(id) {
           mydata$is_ck <- 0
         }
 
-        # 将空格分隔的字符串转换为向量
-        ck_vec <- if (input$ck == "") character(0) else strsplit(trimws(input$ck), " +")[[1]]
         location_vec <- if (input$location == "") character(0) else strsplit(trimws(input$location), " +")[[1]]
         rows_vec <- if (input$rows == "") character(0) else strsplit(trimws(input$rows), " +")[[1]]
-
-        # 解析ck向量，返回每个地点的ck列表
-        # 规则：括号内为双对照或多对照，如"(中黄301 皖豆37) 齐黄34"
-        parse_ck_by_place <- function(ck_vec, n_places) {
-          result <- list()
-          ck_idx <- 1
-          for (i in seq_len(n_places)) {
-            if (ck_idx > length(ck_vec)) {
-              result[[i]] <- ck_vec[1]  # 复用第一个ck
-            } else {
-              ck_item <- ck_vec[ck_idx]
-              if (grepl("^\\(.+\\)$", ck_item)) {
-                # 括号内的双对照或多对照
-                inner <- gsub("^\\(|\\)$", "", ck_item)
-                result[[i]] <- strsplit(trimws(inner), " +")[[1]]
-              } else {
-                # 单对照
-                result[[i]] <- ck_item
-              }
-            }
-            ck_idx <- ck_idx + 1
-          }
-          result
-        }
 
         # 多地点时 restartfid = TRUE，确保不同地点有不同的 fieldid
         restartfid <- length(location_vec) > 1
 
-        # 按地点解析ck
-        ck_by_place <- parse_ck_by_place(ck_vec, length(location_vec))
+        # 按地点解析ck（|分隔同一地点多个对照，空格分隔不同地点）
+        ck_by_place <- parse_ck_by_location(input$ck, length(location_vec))
 
         # 循环调用planting，每个地点单独处理
         all_planted <- list()

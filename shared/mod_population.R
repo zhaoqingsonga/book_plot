@@ -114,7 +114,9 @@ population_ui <- function(id) {
                   accordion_panel(
                     "种植参数",
                     textInput(ns("ck"), "对照品种", value = "", width = "100%"),
-                    p("注：填写后会在最后添加一行对照，空格分隔多个", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    p("同一地点多个对照用 | 分隔，不同地点用空格分隔。例：", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    p("  「冀豆12|冀豆17」→ 每组后连续插入冀豆12和冀豆17（2个对照）", class = "text-muted", style = "font-size: 12px; margin-top: 0px;"),
+                    p("  「冀豆12|冀豆17 齐黄34」→ 地点1插冀豆12+冀豆17，地点2插齐黄34", class = "text-muted", style = "font-size: 12px; margin-top: 0px;"),
                     numericInput(ns("interval"), "对照间隔数", value = 0, min = 0, width = "100%"),
                     p("每隔N个材料插入一行对照", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     p("间隔数为0，则表示不插入对照", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
@@ -907,11 +909,6 @@ population_server <- function(id) {
 
         shinyjs::html(ns("gen_status"), paste("get_population完成，返回", nrow(mydata), "行"))
 
-        # 处理对照品种和间隔
-        ck_value <- parseCkInput(input$ck)
-        # 如果没有填对照品种，间隔数设为999（不起作用）
-        interval_val <- if (is.null(ck_value) || !nzchar(input$interval)) INTERVAL_DISABLED else input$interval
-
         # 多地点处理
         location_vec <- if (input$location == "") character(0) else strsplit(trimws(input$location), " +")[[1]]
 
@@ -919,9 +916,15 @@ population_server <- function(id) {
           stop("请输入试验地点")
         }
 
+        # 处理对照品种和间隔（需在 location_vec 之后）
+        ck_by_loc <- parse_ck_by_location(input$ck, length(location_vec))
+        # 如果没有填对照品种，间隔数设为999（不起作用）
+        interval_val <- if (is.null(ck_by_loc) || !nzchar(input$interval)) INTERVAL_DISABLED else input$interval
+
         # 循环处理每个地点
         all_planted <- list()
         for (i in seq_along(location_vec)) {
+          ck_value <- ck_by_loc[[i]]
           planted_loc <- mydata %>% planting(
             interval = interval_val,
             s_prefix = input$prefix,

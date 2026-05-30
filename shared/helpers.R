@@ -88,12 +88,28 @@ getExperimentFilenameLabel <- function(records, experiment_id, default_name) {
 }
 
 # 解析对照品种输入
-parseCkInput <- function(ck_text) {
+ParseCkInput <- function(ck_text) {
   if (nzchar(ck_text)) {
     unlist(strsplit(trimws(ck_text), " +"))
   } else {
     NULL
   }
+}
+
+# 解析不同地点的对照品种（|分隔同一地点的多个对照，空格分隔不同地点）
+# 例："冀豆12|冀豆17 齐黄34" → 地点1: c("冀豆12","冀豆17"), 地点2: c("齐黄34")
+parse_ck_by_location <- function(ck_text, n_locations) {
+  if (!nzchar(ck_text)) return(NULL)
+  parts <- strsplit(trimws(ck_text), " +")[[1]]
+  result <- vector("list", n_locations)
+  for (i in seq_len(n_locations)) {
+    if (i <= length(parts)) {
+      result[[i]] <- strsplit(parts[i], "\\|")[[1]]
+    } else {
+      result[[i]] <- strsplit(parts[1], "\\|")[[1]]
+    }
+  }
+  result
 }
 
 # Get Excel sheet names
