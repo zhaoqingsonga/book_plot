@@ -49,15 +49,16 @@ buildDesignplotServer <- function(input, output, session) {
       df
     }
 
-    # 统计每个试验的总行数，追加到图例名中
+    # 统计每个试验的总格数（rows×cols），与补种统计口径一致
     exp_mask <- layout_df$type == "实验"
     if (any(exp_mask)) {
+      layout_df$cells <- layout_df$rows * layout_df$cols
       exp_row_stats <- stats::aggregate(
-        x = list(total_rows = layout_df$rows[exp_mask]),
+        x = list(total_cells = layout_df$cells[exp_mask]),
         by = list(name = layout_df$name[exp_mask]),
         FUN = sum
       )
-      exp_row_stats$display_name <- paste0(exp_row_stats$name, "（", exp_row_stats$total_rows, "排）")
+      exp_row_stats$display_name <- paste0(exp_row_stats$name, "（", exp_row_stats$total_cells, "行）")
       name_map <- stats::setNames(exp_row_stats$display_name, exp_row_stats$name)
       layout_df$name[exp_mask] <- unname(name_map[layout_df$name[exp_mask]])
     }
