@@ -1262,29 +1262,49 @@ capturePlantingUndoCheckpoint <- function(plant_table_name, experiment_id, plan_
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
 
-  plan_run <- tryCatch(
-    DBI::dbGetQuery(con, "SELECT * FROM plan_runs WHERE plan_id = ?", params = list(plan_id)),
-    error = function(e) data.frame()
-  )
-  if (!is.data.frame(plan_run)) plan_run <- data.frame()
-  plan_slots <- tryCatch(
-    DBI::dbGetQuery(con, "SELECT * FROM plan_slots WHERE plan_id = ? ORDER BY slot_id", params = list(plan_id)),
-    error = function(e) data.frame()
-  )
-  if (!is.data.frame(plan_slots)) plan_slots <- data.frame()
-  plant_assignments <- tryCatch(
-    DBI::dbGetQuery(con, "SELECT * FROM plant_assignments WHERE plan_id = ? ORDER BY assignment_id", params = list(plan_id)),
-    error = function(e) data.frame()
-  )
-  if (!is.data.frame(plant_assignments)) plant_assignments <- data.frame()
-
-  epr <- tryCatch(
+  # 捕获该地块上所有实验的完整数据（不仅是当前 experiment_id）
+  all_epr <- tryCatch(
     DBI::dbGetQuery(con,
-      "SELECT * FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
-      params = list(experiment_id, plant_table_name)),
+      "SELECT * FROM experiment_plant_runs WHERE plant_table_name = ?",
+      params = list(plant_table_name)),
     error = function(e) data.frame()
   )
-  if (!is.data.frame(epr)) epr <- data.frame()
+  if (!is.data.frame(all_epr)) all_epr <- data.frame()
+
+  all_plan_ids <- if (nrow(all_epr) > 0 && "plan_id" %in% names(all_epr)) {
+    unique(stats::na.omit(as.character(all_epr$plan_id)))
+  } else {
+    plan_id  # 兜底：至少捕获当前 plan_id
+  }
+  all_plan_ids <- all_plan_ids[nzchar(all_plan_ids)]
+
+  plan_run <- data.frame()
+  plan_slots <- data.frame()
+  plant_assignments <- data.frame()
+  if (length(all_plan_ids) > 0) {
+    placeholders <- paste(rep("?", length(all_plan_ids)), collapse = ",")
+    plan_run <- tryCatch(
+      DBI::dbGetQuery(con,
+        paste0("SELECT * FROM plan_runs WHERE plan_id IN (", placeholders, ")"),
+        params = as.list(all_plan_ids)),
+      error = function(e) data.frame()
+    )
+    if (!is.data.frame(plan_run)) plan_run <- data.frame()
+    plan_slots <- tryCatch(
+      DBI::dbGetQuery(con,
+        paste0("SELECT * FROM plan_slots WHERE plan_id IN (", placeholders, ") ORDER BY slot_id"),
+        params = as.list(all_plan_ids)),
+      error = function(e) data.frame()
+    )
+    if (!is.data.frame(plan_slots)) plan_slots <- data.frame()
+    plant_assignments <- tryCatch(
+      DBI::dbGetQuery(con,
+        paste0("SELECT * FROM plant_assignments WHERE plan_id IN (", placeholders, ") ORDER BY assignment_id"),
+        params = as.list(all_plan_ids)),
+      error = function(e) data.frame()
+    )
+    if (!is.data.frame(plant_assignments)) plant_assignments <- data.frame()
+  }
 
   list(
     version = 1L,
@@ -1298,7 +1318,7 @@ capturePlantingUndoCheckpoint <- function(plant_table_name, experiment_id, plan_
     plan_run = plan_run,
     plan_slots = plan_slots,
     plant_assignments = plant_assignments,
-    experiment_plant_run = epr
+    experiment_plant_run = all_epr
   )
 }
 
@@ -1306,8 +1326,6 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
   if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) stop("无效的快照")
   plant_table_name <- trimws(as.character(checkpoint$plant_table_name))
   field_name <- trimws(as.character(checkpoint$field_name))
-  plan_id <- trimws(as.character(checkpoint$plan_id))
-  experiment_id <- trimws(as.character(checkpoint$experiment_id))
 
   savePlantTable(field_name, checkpoint$plant_matrix, db_path = db_path)
   sow_df <- checkpoint$sow_df
@@ -1318,70 +1336,87 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
 
-  DBI::dbWithTransaction(con, {
-    DBI::dbExecute(con, "DELETE FROM plant_assignments WHERE plan_id = ?", params = list(plan_id))
-    DBI::dbExecute(con, "DELETE FROM plan_slots WHERE plan_id = ?", params = list(plan_id))
-    DBI::dbExecute(con, "DELETE FROM plan_runs WHERE plan_id = ?", params = list(plan_id))
+  # 收集快照中所有 plan_id
+  all_plan_ids <- unique(c(
+    trimws(as.character(checkpoint$plan_id)),
+    if (nrow(checkpoint$plan_run) > 0 && "plan_id" %in% names(checkpoint$plan_run))
+      as.character(checkpoint$plan_run$plan_id) else character(0)
+  ))
+  all_plan_ids <- all_plan_ids[nzchar(all_plan_ids)]
 
+  DBI::dbWithTransaction(con, {
+    # 清除该地块上所有实验的 plan 数据和运行记录
+    if (length(all_plan_ids) > 0) {
+      ph <- paste(rep("?", length(all_plan_ids)), collapse = ",")
+      DBI::dbExecute(con, paste0("DELETE FROM plant_assignments WHERE plan_id IN (", ph, ")"),
+                     params = as.list(all_plan_ids))
+      DBI::dbExecute(con, paste0("DELETE FROM plan_slots WHERE plan_id IN (", ph, ")"),
+                     params = as.list(all_plan_ids))
+      DBI::dbExecute(con, paste0("DELETE FROM plan_runs WHERE plan_id IN (", ph, ")"),
+                     params = as.list(all_plan_ids))
+    }
+    DBI::dbExecute(con, "DELETE FROM experiment_plant_runs WHERE plant_table_name = ?",
+                   params = list(plant_table_name))
+
+    # 恢复 plan_runs
     pr <- checkpoint$plan_run
     if (is.data.frame(pr) && nrow(pr) > 0) {
-      DBI::dbExecute(con,
-        paste0(
-          "INSERT INTO plan_runs(plan_id, experiment_name, source_param_file, field_length, field_layout, ",
-          "bridge_layout, row_gap, group_rows, design_from_left, created_at) ",
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        ),
-        params = list(
-          as.character(pr$plan_id[1]),
-          as.character(pr$experiment_name[1]),
-          if ("source_param_file" %in% names(pr)) as.character(pr$source_param_file[1]) else NA_character_,
-          suppressWarnings(as.numeric(if ("field_length" %in% names(pr)) pr$field_length[1] else NA_real_)),
-          if ("field_layout" %in% names(pr)) as.character(pr$field_layout[1]) else NA_character_,
-          if ("bridge_layout" %in% names(pr)) as.character(pr$bridge_layout[1]) else NA_character_,
-          suppressWarnings(as.numeric(if ("row_gap" %in% names(pr)) pr$row_gap[1] else NA_real_)),
-          suppressWarnings(as.integer(if ("group_rows" %in% names(pr)) pr$group_rows[1] else NA_integer_)),
-          suppressWarnings(as.integer(if ("design_from_left" %in% names(pr)) pr$design_from_left[1] else NA_integer_)),
-          as.character(pr$created_at[1])
-        ))
+      for (i in seq_len(nrow(pr))) {
+        DBI::dbExecute(con,
+          "INSERT INTO plan_runs(plan_id, experiment_name, source_param_file, field_length, field_layout, bridge_layout, row_gap, group_rows, design_from_left, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          params = list(
+            as.character(pr$plan_id[i]),
+            as.character(pr$experiment_name[i]),
+            if ("source_param_file" %in% names(pr)) as.character(pr$source_param_file[i]) else NA_character_,
+            suppressWarnings(as.numeric(if ("field_length" %in% names(pr)) pr$field_length[i] else NA_real_)),
+            if ("field_layout" %in% names(pr)) as.character(pr$field_layout[i]) else NA_character_,
+            if ("bridge_layout" %in% names(pr)) as.character(pr$bridge_layout[i]) else NA_character_,
+            suppressWarnings(as.numeric(if ("row_gap" %in% names(pr)) pr$row_gap[i] else NA_real_)),
+            suppressWarnings(as.integer(if ("group_rows" %in% names(pr)) pr$group_rows[i] else NA_integer_)),
+            suppressWarnings(as.integer(if ("design_from_left" %in% names(pr)) pr$design_from_left[i] else NA_integer_)),
+            as.character(pr$created_at[i])
+          ))
+      }
     }
 
+    # 恢复 plan_slots
     ps <- checkpoint$plan_slots
     if (is.data.frame(ps) && nrow(ps) > 0) {
-      slot_cols <- c("plan_id", "seq_no", "field_row_index", "field_row_no", "field_col_no", "row_length", "total_length", "interval_width", "created_at")
+      slot_cols <- c("plan_id", "seq_no", "field_row_index", "field_row_no",
+                     "field_col_no", "row_length", "total_length", "interval_width", "created_at")
       slot_cols <- intersect(slot_cols, names(ps))
       if (length(slot_cols) > 0) {
-        ps_out <- ps[, slot_cols, drop = FALSE]
-        DBI::dbWriteTable(con, "plan_slots", ps_out, append = TRUE)
+        DBI::dbWriteTable(con, "plan_slots", ps[, slot_cols, drop = FALSE], append = TRUE)
       }
     }
 
+    # 恢复 plant_assignments（田间布局图的数据来源）
     pa <- checkpoint$plant_assignments
     if (is.data.frame(pa) && nrow(pa) > 0) {
-      as_cols <- c("plan_id", "seq_no", "experiment_name", "material_name", "material_subrow_no", "field_row_no", "field_col_no", "created_at")
+      as_cols <- c("plan_id", "seq_no", "experiment_name", "material_name",
+                   "material_subrow_no", "field_row_no", "field_col_no", "created_at")
       as_cols <- intersect(as_cols, names(pa))
       if (length(as_cols) > 0) {
-        pa_out <- pa[, as_cols, drop = FALSE]
-        DBI::dbWriteTable(con, "plant_assignments", pa_out, append = TRUE)
+        DBI::dbWriteTable(con, "plant_assignments", pa[, as_cols, drop = FALSE], append = TRUE)
       }
     }
 
-    DBI::dbExecute(con,
-      "DELETE FROM experiment_plant_runs WHERE experiment_id = ? AND plant_table_name = ?",
-      params = list(experiment_id, plant_table_name))
-
+    # 恢复 experiment_plant_runs
     epr <- checkpoint$experiment_plant_run
     if (is.data.frame(epr) && nrow(epr) > 0) {
-      ensureExperimentParentExists(con, as.character(epr$experiment_id[1]))
-      DBI::dbExecute(con,
-        "INSERT INTO experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-        params = list(
-          as.character(epr$experiment_id[1]),
-          as.character(epr$plant_table_name[1]),
-          if ("sow_table_name" %in% names(epr)) as.character(epr$sow_table_name[1]) else NA_character_,
-          if ("plan_id" %in% names(epr)) as.character(epr$plan_id[1]) else NA_character_,
-          as.character(epr$created_at[1]),
-          as.character(epr$updated_at[1])
-        ))
+      for (i in seq_len(nrow(epr))) {
+        ensureExperimentParentExists(con, as.character(epr$experiment_id[i]))
+        DBI::dbExecute(con,
+          "INSERT INTO experiment_plant_runs(experiment_id, plant_table_name, sow_table_name, plan_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+          params = list(
+            as.character(epr$experiment_id[i]),
+            as.character(epr$plant_table_name[i]),
+            if ("sow_table_name" %in% names(epr)) as.character(epr$sow_table_name[i]) else NA_character_,
+            if ("plan_id" %in% names(epr)) as.character(epr$plan_id[i]) else NA_character_,
+            as.character(epr$created_at[i]),
+            as.character(epr$updated_at[i])
+          ))
+      }
     }
   })
 
