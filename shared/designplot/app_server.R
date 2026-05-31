@@ -121,10 +121,10 @@ buildDesignplotServer <- function(input, output, session) {
                          limits = c(0, metrics$max_row_id + 0.5), expand = c(0, 0)) +
       coord_fixed(ratio = metrics$aspect_ratio) +
       (if (nrow(supplement_df) > 0) {
-        guides(fill = guide_legend(ncol = 3, byrow = TRUE, order = 1),
-               color = guide_legend(ncol = 3, byrow = TRUE, order = 2))
+        guides(fill = guide_legend(ncol = 2, byrow = TRUE, order = 1),
+               color = guide_legend(ncol = 2, byrow = TRUE, order = 2))
       } else {
-        guides(fill = guide_legend(ncol = 3, byrow = TRUE))
+        guides(fill = guide_legend(ncol = 2, byrow = TRUE))
       }) +
       theme_minimal() +
       theme(
