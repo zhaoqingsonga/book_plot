@@ -15,7 +15,7 @@ connectDesignplotDb <- function(db_path = defaultSqlitePath()) {
 }
 
 # ---- 数据库 schema 版本常量 ----
-SCHEMA_VERSION <- 2L
+SCHEMA_VERSION <- 3L
 
 # ---- 获取/设置 schema 版本（内存缓存）----
 .schema_version_cache <- NULL
@@ -242,6 +242,23 @@ initDesignplotDb <- function(con) {
       }
     }
     setSchemaVersion(con, 2L)
+  }
+
+  # v3: 种植快照表
+  if (current_ver < 3L) {
+    DBI::dbExecute(con, "
+      CREATE TABLE IF NOT EXISTS planting_snapshots (
+        snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        snapshot_slot INTEGER NOT NULL CHECK(snapshot_slot IN (1, 2)),
+        experiment_id TEXT NOT NULL,
+        plant_table_name TEXT NOT NULL,
+        snapshot_label TEXT,
+        snapshot_data BLOB NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(snapshot_slot)
+      )
+    ")
+    setSchemaVersion(con, 3L)
   }
 }
 
@@ -1369,4 +1386,120 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
   })
 
   invisible(TRUE)
+}
+
+# =============================================================================
+# 种植快照 — 持久化快照 CRUD
+# =============================================================================
+
+#' 保存种植快照到指定槽位（1 或 2）
+savePlantingSnapshot <- function(slot, experiment_id, plant_table_name, checkpoint_list,
+                                  snapshot_label = "", db_path = defaultSqlitePath()) {
+  slot <- as.integer(slot)
+  if (!slot %in% c(1L, 2L)) stop("snapshot_slot 必须为 1 或 2")
+  experiment_id <- trimws(as.character(experiment_id))
+  plant_table_name <- trimws(as.character(plant_table_name))
+  if (!nzchar(experiment_id)) stop("experiment_id 不能为空")
+  if (!nzchar(plant_table_name)) stop("plant_table_name 不能为空")
+  if (!is.list(checkpoint_list)) stop("checkpoint_list 必须为列表")
+
+  blob_data <- base::serialize(checkpoint_list, NULL)
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  DBI::dbExecute(con, "
+    INSERT OR REPLACE INTO planting_snapshots
+      (snapshot_slot, experiment_id, plant_table_name, snapshot_label, snapshot_data, created_at)
+    VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%S', 'now'))
+  ", params = list(slot, experiment_id, plant_table_name, snapshot_label,
+                   list(blob_data)))
+
+  invisible(TRUE)
+}
+
+#' 从指定槽位加载快照（返回 checkpoint list，空槽返回 NULL）
+loadPlantingSnapshot <- function(slot, db_path = defaultSqlitePath()) {
+  slot <- as.integer(slot)
+  if (!slot %in% c(1L, 2L)) stop("snapshot_slot 必须为 1 或 2")
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  row <- DBI::dbGetQuery(con,
+    "SELECT snapshot_data FROM planting_snapshots WHERE snapshot_slot = ?",
+    params = list(slot))
+  if (!is.data.frame(row) || nrow(row) == 0L) return(NULL)
+
+  checkpoint <- tryCatch(
+    base::unserialize(row$snapshot_data[[1]]),
+    error = function(e) stop("快照数据已损坏，无法恢复")
+  )
+  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) {
+    stop("快照数据格式无效，无法恢复")
+  }
+  checkpoint
+}
+
+#' 删除指定槽位的快照
+deletePlantingSnapshot <- function(slot, db_path = defaultSqlitePath()) {
+  slot <- as.integer(slot)
+  if (!slot %in% c(1L, 2L)) stop("snapshot_slot 必须为 1 或 2")
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  DBI::dbExecute(con,
+    "DELETE FROM planting_snapshots WHERE snapshot_slot = ?",
+    params = list(slot))
+  invisible(TRUE)
+}
+
+#' 列出所有快照槽位状态（始终返回 slot 1+2 两行）
+listPlantingSnapshots <- function(db_path = defaultSqlitePath()) {
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  rows <- DBI::dbGetQuery(con, "
+    SELECT snapshot_slot, experiment_id, plant_table_name, snapshot_label, created_at
+    FROM planting_snapshots ORDER BY snapshot_slot
+  ")
+  base <- data.frame(
+    snapshot_slot = c(1L, 2L),
+    experiment_id = NA_character_,
+    plant_table_name = NA_character_,
+    snapshot_label = NA_character_,
+    created_at = NA_character_,
+    stringsAsFactors = FALSE
+  )
+  if (is.data.frame(rows) && nrow(rows) > 0L) {
+    for (i in seq_len(nrow(rows))) {
+      idx <- which(base$snapshot_slot == rows$snapshot_slot[i])
+      if (length(idx) == 1L) {
+        base$experiment_id[idx] <- as.character(rows$experiment_id[i])
+        base$plant_table_name[idx] <- as.character(rows$plant_table_name[i])
+        base$snapshot_label[idx] <- as.character(rows$snapshot_label[i])
+        base$created_at[idx] <- as.character(rows$created_at[i])
+      }
+    }
+  }
+  base
+}
+
+#' 检查指定槽位是否存在快照
+hasPlantingSnapshot <- function(slot, db_path = defaultSqlitePath()) {
+  slot <- as.integer(slot)
+  if (!slot %in% c(1L, 2L)) return(FALSE)
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  count <- DBI::dbGetQuery(con,
+    "SELECT COUNT(*) AS n FROM planting_snapshots WHERE snapshot_slot = ?",
+    params = list(slot))
+  isTRUE(count$n > 0L)
 }

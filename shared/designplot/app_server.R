@@ -164,6 +164,8 @@ buildDesignplotServer <- function(input, output, session) {
   isPlantingInProgress <- reactiveVal(FALSE)
   # 执行种植撤销：内存中保留最近 2 次操作前的快照（刷新页面后清空）
   plantingUndoStack <- reactiveVal(list())
+  # 种植快照：DB 持久化的快照刷新触发器
+  snapshotTrigger <- reactiveVal(0L)
   # 各 Tab 共用的当前种植表（*.plant 表名）；四个下拉框由此同步
   activePlantTableName <- reactiveVal(NA_character_)
   unifiedPlantSelectBusy <- reactiveVal(FALSE)
@@ -1392,6 +1394,202 @@ buildDesignplotServer <- function(input, output, session) {
       showNotification("已撤销上一步「执行试验种植」", type = "message")
     }, error = function(e) {
       showNotification(paste0("撤销失败: ", e$message), type = "error")
+    })
+  })
+
+  # ===========================================================================
+  # 种植快照 — 持久化快照 UI 状态与操作
+  # ===========================================================================
+  snapshotList <- reactive({
+    snapshotTrigger()
+    listPlantingSnapshots(sqlite_db_path)
+  })
+
+  buildSnapshotStatus <- function(slot_idx) {
+    snaps <- snapshotList()
+    row_data <- snaps[snaps$snapshot_slot == slot_idx, , drop = FALSE]
+    if (nrow(row_data) == 0L || is.na(row_data$experiment_id) || !nzchar(row_data$experiment_id)) {
+      return(tags$div(style = "color:#9ca3af;font-size:11px;margin-top:4px;", "(空)"))
+    }
+    tags$div(
+      style = "color:#059669;font-size:11px;margin-top:4px;",
+      paste0("试验: ", row_data$experiment_id, " | 地块: ", row_data$plant_table_name, " | ", row_data$created_at)
+    )
+  }
+
+  output$snapshot1StatusUi <- renderUI({ snapshotTrigger(); buildSnapshotStatus(1L) })
+  output$snapshot2StatusUi <- renderUI({ snapshotTrigger(); buildSnapshotStatus(2L) })
+
+  snapshotSaveImpl <- function(slot) {
+    pt <- selectedExperimentPlantTableName()
+    validate(need(!is.na(pt) && nzchar(pt), "请先选择种植地块"))
+    exp_id <- trimws(input$sqliteFilterExperimentId)
+    validate(need(nzchar(exp_id), "请先选择试验"))
+    current_pid <- latest_plan_id()
+    if (is.null(current_pid) || is.na(current_pid) || !nzchar(current_pid)) {
+      current_pid <- createPlantingPlanId(exp_id, currentExperimentName(), pt)
+    }
+    field_name <- sub("\\.plant$", "", pt)
+    ck <- capturePlantingUndoCheckpoint(
+      plant_table_name = pt,
+      experiment_id = exp_id,
+      plan_id = current_pid,
+      field_name = field_name,
+      db_path = sqlite_db_path
+    )
+    savePlantingSnapshot(slot, exp_id, pt, ck, "", sqlite_db_path)
+    snapshotTrigger(snapshotTrigger() + 1L)
+  }
+
+  snapshotRestoreImpl <- function(slot) {
+    ck <- loadPlantingSnapshot(slot, sqlite_db_path)
+    if (is.null(ck)) {
+      showNotification(paste0("快照 ", slot, " 为空"), type = "warning")
+      return(invisible(NULL))
+    }
+    restorePlantingUndoCheckpoint(ck, sqlite_db_path)
+    experimentPlantedState(list(table_name = ck$plant_table_name, matrix = ck$plant_matrix))
+    if (is.data.frame(ck$plan_run) && nrow(ck$plan_run) > 0L && nzchar(trimws(as.character(ck$plan_id)))) {
+      latest_plan_id(as.character(ck$plan_id[1]))
+    } else {
+      latest_plan_id(NULL)
+    }
+    eid <- trimws(as.character(ck$experiment_id))
+    if (nzchar(eid)) pendingSqliteExperimentSelection(eid)
+    plantTableTrigger(plantTableTrigger() + 1L)
+    refreshAllSqlite()
+    setActivePlantTable(ck$plant_table_name)
+    snapshotTrigger(snapshotTrigger() + 1L)
+  }
+
+  snapshotClearImpl <- function(slot) {
+    deletePlantingSnapshot(slot, sqlite_db_path)
+    snapshotTrigger(snapshotTrigger() + 1L)
+  }
+
+  # ---- Slot 1 ----
+  observeEvent(input$snapshot1Save, {
+    tryCatch({
+      snapshotSaveImpl(1L)
+      showNotification("快照 1 已保存", type = "message")
+    }, error = function(e) {
+      showNotification(paste0("保存快照 1 失败: ", e$message), type = "error")
+    })
+  })
+
+  observeEvent(input$snapshot1Restore, {
+    if (!hasPlantingSnapshot(1L, sqlite_db_path)) {
+      showNotification("快照 1 为空", type = "warning")
+      return(invisible(NULL))
+    }
+    showModal(modalDialog(
+      title = tagList(icon("exclamation-triangle"), "确认恢复快照 1"),
+      tags$p("将恢复快照 1 的种植状态，覆盖当前地块数据。该操作不可撤销。",
+             style = "margin:0;color:#b91c1c;"),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("confirmSnapshot1Restore", "确认恢复", class = "btn-danger")
+      ),
+      easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$confirmSnapshot1Restore, {
+    tryCatch({
+      removeModal()
+      snapshotRestoreImpl(1L)
+      showNotification("快照 1 已恢复", type = "message")
+    }, error = function(e) {
+      showNotification(paste0("恢复快照 1 失败: ", e$message), type = "error")
+    })
+  })
+
+  observeEvent(input$snapshot1Clear, {
+    if (!hasPlantingSnapshot(1L, sqlite_db_path)) {
+      showNotification("快照 1 已为空", type = "warning")
+      return(invisible(NULL))
+    }
+    showModal(modalDialog(
+      title = "确认清除快照 1",
+      tags$p("清除后不可恢复。", style = "margin:0;"),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("confirmSnapshot1Clear", "确认清除", class = "btn-danger")
+      ),
+      easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$confirmSnapshot1Clear, {
+    tryCatch({
+      removeModal()
+      snapshotClearImpl(1L)
+      showNotification("快照 1 已清除", type = "message")
+    }, error = function(e) {
+      showNotification(paste0("清除快照 1 失败: ", e$message), type = "error")
+    })
+  })
+
+  # ---- Slot 2 ----
+  observeEvent(input$snapshot2Save, {
+    tryCatch({
+      snapshotSaveImpl(2L)
+      showNotification("快照 2 已保存", type = "message")
+    }, error = function(e) {
+      showNotification(paste0("保存快照 2 失败: ", e$message), type = "error")
+    })
+  })
+
+  observeEvent(input$snapshot2Restore, {
+    if (!hasPlantingSnapshot(2L, sqlite_db_path)) {
+      showNotification("快照 2 为空", type = "warning")
+      return(invisible(NULL))
+    }
+    showModal(modalDialog(
+      title = tagList(icon("exclamation-triangle"), "确认恢复快照 2"),
+      tags$p("将恢复快照 2 的种植状态，覆盖当前地块数据。该操作不可撤销。",
+             style = "margin:0;color:#b91c1c;"),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("confirmSnapshot2Restore", "确认恢复", class = "btn-danger")
+      ),
+      easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$confirmSnapshot2Restore, {
+    tryCatch({
+      removeModal()
+      snapshotRestoreImpl(2L)
+      showNotification("快照 2 已恢复", type = "message")
+    }, error = function(e) {
+      showNotification(paste0("恢复快照 2 失败: ", e$message), type = "error")
+    })
+  })
+
+  observeEvent(input$snapshot2Clear, {
+    if (!hasPlantingSnapshot(2L, sqlite_db_path)) {
+      showNotification("快照 2 已为空", type = "warning")
+      return(invisible(NULL))
+    }
+    showModal(modalDialog(
+      title = "确认清除快照 2",
+      tags$p("清除后不可恢复。", style = "margin:0;"),
+      footer = tagList(
+        modalButton("取消"),
+        actionButton("confirmSnapshot2Clear", "确认清除", class = "btn-danger")
+      ),
+      easyClose = TRUE
+    ))
+  })
+
+  observeEvent(input$confirmSnapshot2Clear, {
+    tryCatch({
+      removeModal()
+      snapshotClearImpl(2L)
+      showNotification("快照 2 已清除", type = "message")
+    }, error = function(e) {
+      showNotification(paste0("清除快照 2 失败: ", e$message), type = "error")
     })
   })
 
