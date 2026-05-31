@@ -697,6 +697,15 @@ hr {
   opacity: 0.5;
 }
 
+/* ===== 试验名称表 - experiment_id/experiment_name 完整显示、不换行 ===== */
+.exp-name-table.dataTable tbody td,
+.exp-name-table.dataTable tbody th {
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+}
+
 /* ===== 关于页面 ===== */
 
 /* Hero Banner */

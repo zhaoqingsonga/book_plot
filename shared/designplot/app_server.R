@@ -1716,9 +1716,15 @@ buildDesignplotServer <- function(input, output, session) {
   })
 
   output$sqliteExperiments <- DT::renderDataTable(
-    DT::datatable(sqliteExperiments(), options = list(pageLength = 5, scrollX = TRUE), escape = FALSE,
+    DT::datatable(sqliteExperiments(),
+                  options = list(
+                    pageLength = 5,
+                    scrollX = TRUE,
+                    autoWidth = TRUE
+                  ),
+                  escape = FALSE,
                   selection = list(mode = "single", target = "row", selected = NULL),
-                  class = "compact")
+                  class = "compact exp-name-table")
   )
 
   # ---- 点击试验名称表某行 → 同步下拉框 + 刷新右侧记录表 ----
@@ -1735,7 +1741,9 @@ buildDesignplotServer <- function(input, output, session) {
   })
 
   output$sqliteExperimentRecords <- DT::renderDataTable(
-    DT::datatable(sqliteExperimentRecords(), options = list(pageLength = 5, scrollX = TRUE), class = "compact")
+    DT::datatable(sqliteExperimentRecords(),
+                  options = list(pageLength = 5, scrollX = TRUE, autoWidth = TRUE),
+                  class = "compact exp-name-table")
   )
   output$downloadExperimentsCsv <- downloadHandler(filename = function() { "experiments.csv" },
                                                     content = function(file) { write.csv(sqliteExperimentsForExport(), file, row.names = FALSE, fileEncoding = "UTF-8") })
