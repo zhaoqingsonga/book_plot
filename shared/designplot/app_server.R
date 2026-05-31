@@ -1467,6 +1467,8 @@ buildDesignplotServer <- function(input, output, session) {
     }
     eid <- trimws(as.character(ck$experiment_id))
     if (nzchar(eid)) pendingSqliteExperimentSelection(eid)
+    # 强行清除田间布局图缓存，确保渲染时重新从 DB 读取恢复后的数据
+    fieldLayoutCache(list(key = NA_character_, data = NULL))
     plantTableTrigger(plantTableTrigger() + 1L)
     refreshAllSqlite()
     setActivePlantTable(ck$plant_table_name)
