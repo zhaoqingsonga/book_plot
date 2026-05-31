@@ -852,14 +852,19 @@ population_server <- function(id) {
           stop("筛选后无可生成材料：请检查世代范围(min_f/max_f)与new_rows是否大于0")
         }
 
-        # 预先建立原始材料名 -> new_rows 映射
-        # get_population() 后 source 通常对应筛选前的 name，用于恢复实际种植行数
-        pre_name_to_rows <- setNames(.new_rows_vec, as.character(mydata$name))
+        # 给每条材料分配唯一行号，嵌入memo列（get_population会将memo传递到输出）
+        # 避免命名向量在重复name时取第一个匹配项导致行数丢失
+        mydata$._row_tag <- seq_len(nrow(mydata))
+        .tag_to_rows <- setNames(.new_rows_vec, as.character(mydata$._row_tag))
 
         # 添加seeds列（如果不存在）
         if (!"seeds" %in% names(mydata)) {
           mydata$seeds <- 0
         }
+
+        # 确保memo列存在，将._row_tag嵌入其中（get_population保留memo）
+        .orig_memo <- if ("memo" %in% names(mydata)) mydata[["memo"]] else rep(NA_character_, nrow(mydata))
+        mydata$memo <- paste0("__rt", mydata$._row_tag, "__", .orig_memo)
 
         # 调用get_population进行数据升级升级
         shinyjs::html(ns("gen_status"), "正在调用get_population...")
@@ -894,25 +899,17 @@ population_server <- function(id) {
           stop(paste("get_population返回无效数据:", paste(capture.output(str(mydata)), collapse = "\n")))
         }
 
-        # 按 source 恢复实际 new_rows（不依赖 get_population() 前后行数一致）
-        source_key <- as.character(mydata$source)
-        mydata$.actual_rows <- as.numeric(pre_name_to_rows[source_key])
-        # 若 source 匹配不到，兜底用 name 再尝试一次
-        missing_rows_idx <- is.na(mydata$.actual_rows)
-        if (any(missing_rows_idx)) {
-          mydata$.actual_rows[missing_rows_idx] <- as.numeric(pre_name_to_rows[as.character(mydata$name[missing_rows_idx])])
-        }
+        # 从memo中提取._row_tag，恢复原始memo值
+        mydata$._row_tag <- as.integer(sub("^__rt([0-9]+)__.*$", "\\1", mydata$memo))
+        mydata$memo <- sub("^__rt[0-9]+__(.*)$", "\\1", mydata$memo)
+        mydata$memo[is.na(mydata$memo) | nchar(mydata$memo) == 0 | mydata$memo == "NA"] <- NA_character_
+
+        # 按唯一行号恢复实际 new_rows（无重复键问题）
+        mydata$.actual_rows <- as.numeric(.tag_to_rows[as.character(mydata$._row_tag)])
         mydata$.actual_rows[is.na(mydata$.actual_rows) | mydata$.actual_rows <= 0] <- 1
 
-        # 创建材料行数映射（优先 source，其次 name，再其次 code）
-        # 某些数据在 planting() 后 source 可能为空或类型不稳定，需多键兜底
-        source_to_rows <- setNames(mydata$.actual_rows, as.character(mydata$source))
-        name_to_rows <- setNames(mydata$.actual_rows, as.character(mydata$name))
-        code_to_rows <- if ("code" %in% names(mydata)) {
-          setNames(mydata$.actual_rows, as.character(mydata$code))
-        } else {
-          numeric(0)
-        }
+        # 创建 ._row_tag -> rows 映射（唯一键）
+        row_tag_to_rows <- setNames(mydata$.actual_rows, as.character(mydata$._row_tag))
 
         shinyjs::html(ns("gen_status"), paste("get_population完成，返回", nrow(mydata), "行"))
 
@@ -979,23 +976,11 @@ population_server <- function(id) {
               # 对照行：用 ck_rows_val
               actual_rows_i <- ck_rows_val
             } else {
-              # 材料行：按 source -> name -> code 的优先级查找 new_rows
+              # 材料行：按唯一 ._row_tag 查找 new_rows
+              row_tag <- if ("._row_tag" %in% names(planted_loc)) planted_loc$._row_tag[idx] else NA_integer_
               actual_rows_i <- NA_real_
-              src_chr <- if (!is.na(src) && nzchar(src)) as.character(src) else NA_character_
-              if (!is.na(src_chr) && src_chr %in% names(source_to_rows)) {
-                actual_rows_i <- as.numeric(source_to_rows[[src_chr]])
-              }
-              if (is.na(actual_rows_i)) {
-                nm_chr <- name_vec[idx]
-                if (!is.na(nm_chr) && nzchar(nm_chr) && nm_chr %in% names(name_to_rows)) {
-                  actual_rows_i <- as.numeric(name_to_rows[[nm_chr]])
-                }
-              }
-              if (is.na(actual_rows_i)) {
-                cd_chr <- code_vec[idx]
-                if (!is.na(cd_chr) && nzchar(cd_chr) && cd_chr %in% names(code_to_rows)) {
-                  actual_rows_i <- as.numeric(code_to_rows[[cd_chr]])
-                }
+              if (!is.na(row_tag)) {
+                actual_rows_i <- as.numeric(row_tag_to_rows[[as.character(row_tag)]])
               }
               if (is.na(actual_rows_i)) actual_rows_i <- 1
             }
