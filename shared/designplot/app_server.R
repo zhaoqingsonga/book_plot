@@ -49,6 +49,19 @@ buildDesignplotServer <- function(input, output, session) {
       df
     }
 
+    # 统计每个试验的总行数，追加到图例名中
+    exp_mask <- layout_df$type == "实验"
+    if (any(exp_mask)) {
+      exp_row_stats <- stats::aggregate(
+        x = list(total_rows = layout_df$rows[exp_mask]),
+        by = list(name = layout_df$name[exp_mask]),
+        FUN = sum
+      )
+      exp_row_stats$display_name <- paste0(exp_row_stats$name, "（", exp_row_stats$total_rows, "排）")
+      name_map <- stats::setNames(exp_row_stats$display_name, exp_row_stats$name)
+      layout_df$name[exp_mask] <- unname(name_map[layout_df$name[exp_mask]])
+    }
+
     fill_values <- stats::setNames(as.character(layout_df$color), as.character(layout_df$name))
     fill_values <- fill_values[!duplicated(names(fill_values))]
     fill_values <- fill_values[!is.na(fill_values) & fill_values != "NA"]
@@ -67,7 +80,7 @@ buildDesignplotServer <- function(input, output, session) {
         FUN = sum
       )
       supplement_stats$supplement_label <- as.character(supplement_stats$supplement_label)
-      supplement_stats$display_label <- paste0(supplement_stats$supplement_label, "（", supplement_stats$area_cells, "格）")
+      supplement_stats$display_label <- paste0(supplement_stats$supplement_label, "（", supplement_stats$area_cells, "行）")
       label_map <- stats::setNames(supplement_stats$display_label, supplement_stats$supplement_label)
       supplement_df$supplement_display <- unname(label_map[supplement_df$supplement_label])
     }
