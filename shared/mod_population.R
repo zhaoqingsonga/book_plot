@@ -265,10 +265,17 @@ population_server <- function(id) {
 
       tryCatch({
         data <- read.xlsx(input$file$datapath, sheet = input$sheet, colNames = TRUE)
+
+        # 自动补全可选字段的默认值
+        if (!"ma" %in% names(data))         data$ma <- "未知"
+        if (!"pa" %in% names(data))         data$pa <- "未知"
+        if (!"f" %in% names(data))          data$f <- 6
+        if (!"next_stage" %in% names(data)) data$next_stage <- "群体"
+
         rv$raw_data <- data
 
-        # 检查必填字段（get_population需要: name, next_stage, f, new_rows）
-        required_fields <- c("name", "next_stage", "f", "new_rows")
+        # 检查必填字段
+        required_fields <- c("name", "new_rows")
         missing_fields <- setdiff(required_fields, names(data))
 
         if (length(missing_fields) > 0) {
