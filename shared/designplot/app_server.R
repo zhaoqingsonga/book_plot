@@ -1398,16 +1398,15 @@ buildDesignplotServer <- function(input, output, session) {
   })
 
   # ===========================================================================
-  # 种植快照 — 持久化快照（单槽位）
+  # 种植快照 — 持久化快照（双槽位）
   # ===========================================================================
-  snapshotInfo <- reactive({
+  snapshotInfo <- function(slot) {
     snapshotTrigger()
-    getPlantingSnapshotInfo(sqlite_db_path)
-  })
+    getPlantingSnapshotInfo(slot, sqlite_db_path)
+  }
 
-  output$snapshotStatusUi <- renderUI({
-    snapshotTrigger()
-    info <- snapshotInfo()
+  buildSnapshotStatus <- function(slot) {
+    info <- snapshotInfo(slot)
     if (is.na(info$experiment_id) || !nzchar(info$experiment_id)) {
       return(tags$div(style = "color:#9ca3af;font-size:11px;margin-top:4px;", "(空)"))
     }
@@ -1415,9 +1414,12 @@ buildDesignplotServer <- function(input, output, session) {
       style = "color:#059669;font-size:11px;margin-top:4px;",
       paste0("试验: ", info$experiment_id, " | 地块: ", info$plant_table_name, " | ", info$created_at)
     )
-  })
+  }
 
-  snapshotSaveImpl <- function() {
+  output$snapshot1StatusUi <- renderUI({ buildSnapshotStatus(1L) })
+  output$snapshot2StatusUi <- renderUI({ buildSnapshotStatus(2L) })
+
+  snapshotSaveImpl <- function(slot) {
     pt <- selectedExperimentPlantTableName()
     validate(need(!is.na(pt) && nzchar(pt), "请先选择种植地块"))
     exp_id <- tryCatch({
@@ -1448,14 +1450,14 @@ buildDesignplotServer <- function(input, output, session) {
       field_name = field_name,
       db_path = sqlite_db_path
     )
-    savePlantingSnapshot(exp_id$experiment_id, pt, ck, "", sqlite_db_path)
+    savePlantingSnapshot(slot, exp_id$experiment_id, pt, ck, "", sqlite_db_path)
     snapshotTrigger(snapshotTrigger() + 1L)
   }
 
-  snapshotRestoreImpl <- function() {
-    ck <- loadPlantingSnapshot(sqlite_db_path)
+  snapshotRestoreImpl <- function(slot) {
+    ck <- loadPlantingSnapshot(slot, sqlite_db_path)
     if (is.null(ck)) {
-      showNotification("快照为空", type = "warning")
+      showNotification(paste0("快照 ", slot, " 为空"), type = "warning")
       return(invisible(NULL))
     }
     restorePlantingUndoCheckpoint(ck, sqlite_db_path)
@@ -1467,7 +1469,6 @@ buildDesignplotServer <- function(input, output, session) {
     }
     eid <- trimws(as.character(ck$experiment_id))
     if (nzchar(eid)) pendingSqliteExperimentSelection(eid)
-    # 强行清除田间布局图缓存，确保渲染时重新从 DB 读取恢复后的数据
     fieldLayoutCache(list(key = NA_character_, data = NULL))
     plantTableTrigger(plantTableTrigger() + 1L)
     refreshAllSqlite()
@@ -1475,72 +1476,84 @@ buildDesignplotServer <- function(input, output, session) {
     snapshotTrigger(snapshotTrigger() + 1L)
   }
 
-  snapshotClearImpl <- function() {
-    deletePlantingSnapshot(sqlite_db_path)
+  snapshotClearImpl <- function(slot) {
+    deletePlantingSnapshot(slot, sqlite_db_path)
     snapshotTrigger(snapshotTrigger() + 1L)
   }
 
-  observeEvent(input$snapshotSave, {
-    tryCatch({
-      snapshotSaveImpl()
-      showNotification("快照已保存", type = "message")
-    }, error = function(e) {
-      showNotification(paste0("保存快照失败: ", e$message), type = "error")
+  makeSnapshotObservers <- function(slot) {
+    s <- as.character(slot)
+    saveInput <- paste0("snapshot", s, "Save")
+    restoreInput <- paste0("snapshot", s, "Restore")
+    confirmRestore <- paste0("confirmSnapshot", s, "Restore")
+    clearInput <- paste0("snapshot", s, "Clear")
+    confirmClear <- paste0("confirmSnapshot", s, "Clear")
+
+    observeEvent(input[[saveInput]], {
+      tryCatch({
+        snapshotSaveImpl(slot)
+        showNotification(paste0("快照 ", s, " 已保存"), type = "message")
+      }, error = function(e) {
+        showNotification(paste0("保存快照 ", s, " 失败: ", e$message), type = "error")
+      })
     })
-  })
 
-  observeEvent(input$snapshotRestore, {
-    if (!hasPlantingSnapshot(sqlite_db_path)) {
-      showNotification("快照为空", type = "warning")
-      return(invisible(NULL))
-    }
-    showModal(modalDialog(
-      title = tagList(icon("exclamation-triangle"), "确认恢复快照"),
-      tags$p("将恢复种植快照，覆盖当前地块数据。该操作不可撤销。",
-             style = "margin:0;color:#b91c1c;"),
-      footer = tagList(
-        modalButton("取消"),
-        actionButton("confirmSnapshotRestore", "确认恢复", class = "btn-danger")
-      ),
-      easyClose = TRUE
-    ))
-  })
-
-  observeEvent(input$confirmSnapshotRestore, {
-    tryCatch({
-      removeModal()
-      snapshotRestoreImpl()
-      showNotification("快照已恢复", type = "message")
-    }, error = function(e) {
-      showNotification(paste0("恢复快照失败: ", e$message), type = "error")
+    observeEvent(input[[restoreInput]], {
+      if (!hasPlantingSnapshot(slot, sqlite_db_path)) {
+        showNotification(paste0("快照 ", s, " 为空"), type = "warning")
+        return(invisible(NULL))
+      }
+      showModal(modalDialog(
+        title = tagList(icon("exclamation-triangle"), paste0("确认恢复快照 ", s)),
+        tags$p(paste0("将恢复快照 ", s, " 的种植状态，覆盖当前地块数据。该操作不可撤销。"),
+               style = "margin:0;color:#b91c1c;"),
+        footer = tagList(
+          modalButton("取消"),
+          actionButton(confirmRestore, "确认恢复", class = "btn-danger")
+        ),
+        easyClose = TRUE
+      ))
     })
-  })
 
-  observeEvent(input$snapshotClear, {
-    if (!hasPlantingSnapshot(sqlite_db_path)) {
-      showNotification("快照已为空", type = "warning")
-      return(invisible(NULL))
-    }
-    showModal(modalDialog(
-      title = "确认清除快照",
-      tags$p("清除后不可恢复。", style = "margin:0;"),
-      footer = tagList(
-        modalButton("取消"),
-        actionButton("confirmSnapshotClear", "确认清除", class = "btn-danger")
-      ),
-      easyClose = TRUE
-    ))
-  })
-
-  observeEvent(input$confirmSnapshotClear, {
-    tryCatch({
-      removeModal()
-      snapshotClearImpl()
-      showNotification("快照已清除", type = "message")
-    }, error = function(e) {
-      showNotification(paste0("清除快照失败: ", e$message), type = "error")
+    observeEvent(input[[confirmRestore]], {
+      tryCatch({
+        removeModal()
+        snapshotRestoreImpl(slot)
+        showNotification(paste0("快照 ", s, " 已恢复"), type = "message")
+      }, error = function(e) {
+        showNotification(paste0("恢复快照 ", s, " 失败: ", e$message), type = "error")
+      })
     })
-  })
+
+    observeEvent(input[[clearInput]], {
+      if (!hasPlantingSnapshot(slot, sqlite_db_path)) {
+        showNotification(paste0("快照 ", s, " 已为空"), type = "warning")
+        return(invisible(NULL))
+      }
+      showModal(modalDialog(
+        title = paste0("确认清除快照 ", s),
+        tags$p("清除后不可恢复。", style = "margin:0;"),
+        footer = tagList(
+          modalButton("取消"),
+          actionButton(confirmClear, "确认清除", class = "btn-danger")
+        ),
+        easyClose = TRUE
+      ))
+    })
+
+    observeEvent(input[[confirmClear]], {
+      tryCatch({
+        removeModal()
+        snapshotClearImpl(slot)
+        showNotification(paste0("快照 ", s, " 已清除"), type = "message")
+      }, error = function(e) {
+        showNotification(paste0("清除快照 ", s, " 失败: ", e$message), type = "error")
+      })
+    })
+  }
+
+  makeSnapshotObservers(1L)
+  makeSnapshotObservers(2L)
 
   plantedData <- reactive({
     req(input$file1)

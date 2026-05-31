@@ -150,13 +150,25 @@ buildDesignplotUI <- function(){
                                   ),
                                   tags$div(style = "height:4px;"),
                                   tags$p("将当前种植状态存入数据库，刷新后仍可恢复。", style = "color:#6b7280;font-size:11px;margin:0 0 8px 0;"),
-                                  tags$div(style = "background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;",
+                                  # 快照 1
+                                  tags$div(style = "background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;margin-bottom:6px;",
+                                    tags$div(style = "font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;", "快照 1"),
                                     fluidRow(
-                                      column(4, actionButton("snapshotSave", "保存", class = "btn-success btn-xs", width = "100%")),
-                                      column(4, actionButton("snapshotRestore", "恢复", class = "btn-warning btn-xs", width = "100%")),
-                                      column(4, actionButton("snapshotClear", "清除", class = "btn-danger btn-xs", width = "100%"))
+                                      column(4, actionButton("snapshot1Save", "保存", class = "btn-success btn-xs", width = "100%")),
+                                      column(4, actionButton("snapshot1Restore", "恢复", class = "btn-warning btn-xs", width = "100%")),
+                                      column(4, actionButton("snapshot1Clear", "清除", class = "btn-danger btn-xs", width = "100%"))
                                     ),
-                                    uiOutput("snapshotStatusUi")
+                                    uiOutput("snapshot1StatusUi")
+                                  ),
+                                  # 快照 2
+                                  tags$div(style = "background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;",
+                                    tags$div(style = "font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;", "快照 2"),
+                                    fluidRow(
+                                      column(4, actionButton("snapshot2Save", "保存", class = "btn-success btn-xs", width = "100%")),
+                                      column(4, actionButton("snapshot2Restore", "恢复", class = "btn-warning btn-xs", width = "100%")),
+                                      column(4, actionButton("snapshot2Clear", "清除", class = "btn-danger btn-xs", width = "100%"))
+                                    ),
+                                    uiOutput("snapshot2StatusUi")
                                   )
                                 )
                               )
