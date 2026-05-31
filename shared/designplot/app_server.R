@@ -121,15 +121,18 @@ buildDesignplotServer <- function(input, output, session) {
                          limits = c(0, metrics$max_row_id + 0.5), expand = c(0, 0)) +
       coord_fixed(ratio = metrics$aspect_ratio) +
       (if (nrow(supplement_df) > 0) {
-        guides(fill = guide_legend(ncol = 2, byrow = TRUE), color = guide_legend(order = 2))
+        guides(fill = guide_legend(ncol = 3, byrow = TRUE, order = 1),
+               color = guide_legend(ncol = 3, byrow = TRUE, order = 2))
       } else {
-        guides(fill = guide_legend(ncol = 2, byrow = TRUE))
+        guides(fill = guide_legend(ncol = 3, byrow = TRUE))
       }) +
       theme_minimal() +
       theme(
         panel.grid.major = element_line(color = "gray80", linewidth = 0.3),
         panel.grid.minor = element_blank(),
         legend.position = "bottom",
+        legend.box = "vertical",
+        legend.justification = "center",
         legend.text = element_text(size = 12),
         legend.title = element_text(size = 13, face = "bold"),
         plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
