@@ -857,6 +857,7 @@ buildSowTable <- function(field_name, base_matrix, planted_matrix = base_matrix)
     return(data.frame(
       Location = character(), ID = character(), Y = integer(), X = integer(),
       XiaoQuChangDu = numeric(), GuoDaoKuanDu = numeric(), HangJv = numeric(), XiaoQuLiShu = numeric(),
+      XiaoQuHangShu = numeric(), Number.of.slots = numeric(), Number = integer(),
       stringsAsFactors = FALSE
     ))
   }
@@ -893,6 +894,9 @@ buildSowTable <- function(field_name, base_matrix, planted_matrix = base_matrix)
     Location = Location, ID = ID, Y = Y, X = X,
     XiaoQuChangDu = XiaoQuChangDu, GuoDaoKuanDu = GuoDaoKuanDu,
     HangJv = HangJv, XiaoQuLiShu = XiaoQuLiShu,
+    XiaoQuHangShu = rep(1, total_cells),
+    Number.of.slots = rep(18, total_cells),
+    Number = seq_len(total_cells),
     stringsAsFactors = FALSE,
     check.rows = FALSE
   )

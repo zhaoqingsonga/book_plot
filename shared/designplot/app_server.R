@@ -1712,6 +1712,10 @@ buildDesignplotServer <- function(input, output, session) {
       }
     }
 
+    if (!"XiaoQuHangShu" %in% names(sow_df)) sow_df$XiaoQuHangShu <- 1
+    if (!"Number.of.slots" %in% names(sow_df)) sow_df$Number.of.slots <- 18
+    if (!"Number" %in% names(sow_df)) sow_df$Number <- seq_len(nrow(sow_df))
+
     sow_df
   })
 
