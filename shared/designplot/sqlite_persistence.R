@@ -856,7 +856,7 @@ buildSowTable <- function(field_name, base_matrix, planted_matrix = base_matrix)
   if (total_cells == 0L) {
     return(data.frame(
       Location = character(), ID = character(), Y = integer(), X = integer(),
-      XiaoQuChangDu = numeric(), GuoDaoKuanDu = numeric(), HangJv = numeric(), XiaoQuLiShu = numeric(),
+      XiaoQuChangDu = numeric(), GuoDaoKuanDu = numeric(), HangJv = numeric(), XiaoQuLiShu = integer(),
       XiaoQuHangShu = numeric(), Number.of.slots = numeric(), Number = integer(),
       stringsAsFactors = FALSE
     ))
@@ -870,7 +870,7 @@ buildSowTable <- function(field_name, base_matrix, planted_matrix = base_matrix)
   XiaoQuChangDu <- numeric(total_cells)
   GuoDaoKuanDu <- rep(100, total_cells)
   HangJv <- rep(40, total_cells)
-  XiaoQuLiShu <- numeric(total_cells)
+  XiaoQuLiShu <- integer(total_cells)
 
   seq_values <- seq_nos_mat[cbind(positions[, 1], positions[, 2])]
   order_idx <- order(as.integer(seq_values), positions[, 1], positions[, 2])
@@ -887,7 +887,7 @@ buildSowTable <- function(field_name, base_matrix, planted_matrix = base_matrix)
     X[pos] <- as.integer(col_idx)
     int_v <- as.numeric(interval_widths[row_idx])
     XiaoQuChangDu[pos] <- int_v * 100
-    XiaoQuLiShu[pos] <- round(int_v * 13)
+    XiaoQuLiShu[pos] <- as.integer(floor(int_v * 13 + 0.5))
   }
 
   data.frame(
