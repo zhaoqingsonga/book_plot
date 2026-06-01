@@ -887,7 +887,7 @@ buildSowTable <- function(field_name, base_matrix, planted_matrix = base_matrix)
     X[pos] <- as.integer(col_idx)
     int_v <- as.numeric(interval_widths[row_idx])
     XiaoQuChangDu[pos] <- int_v * 100
-    XiaoQuLiShu[pos] <- int_v * 13
+    XiaoQuLiShu[pos] <- round(int_v * 13)
   }
 
   data.frame(
