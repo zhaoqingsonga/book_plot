@@ -131,10 +131,7 @@ yield_test_ui <- function(id) {
                     p("固定则按间隔插入；不固定则随机插入", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
                     checkboxInput(ns("first_as_ck"), "首记录是否对照", value = FALSE),
                     p("勾选则首个记录插入对照行", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
-                    checkboxInput(ns("fix_enabled"), "固定材料位置（跨重复不随机）", value = FALSE),
-                    p("勾选后，指定材料在每重复中保持同一位", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
-                    textInput(ns("fixed_materials"), "固定材料", value = "", width = "100%"),
-                    p("输入材料名称，空格分隔", class = "text-muted", style = "font-size: 12px; margin-top: -3px;"),
+                    
                     numericInput(ns("startN"), "起始编号", value = 1, min = 1, width = "100%"),
                     p("fieldid起始编号", class = "text-muted", style = "font-size: 12px; margin-top: -3px;")
                   ),
@@ -867,15 +864,6 @@ yield_test_server <- function(id) {
           # 按fieldid排序，保证fieldid顺序排列（merge会打乱顺序）
           planted_loc <- planted_loc[order(planted_loc$fieldid), ]
           rownames(planted_loc) <- NULL
-
-          # 固定材料位置：跨重复保持同一位（在 fieldid 排序之后进行）
-          if (isTRUE(input$fix_enabled) && nzchar(trimws(input$fixed_materials))) {
-            fixed_names <- trimws(unlist(strsplit(trimws(input$fixed_materials), " +")))
-            fixed_names <- fixed_names[nzchar(fixed_names)]
-            if (length(fixed_names) > 0) {
-              planted_loc <- fixMaterialPositions(planted_loc, fixed_names)
-            }
-          }
 
           all_planted[[i]] <- planted_loc
           # 间隔1.2秒确保fieldid不同
