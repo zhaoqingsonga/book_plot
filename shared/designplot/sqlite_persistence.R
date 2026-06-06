@@ -15,7 +15,7 @@ connectDesignplotDb <- function(db_path = defaultSqlitePath()) {
 }
 
 # ---- 数据库 schema 版本常量 ----
-SCHEMA_VERSION <- 3L
+SCHEMA_VERSION <- 5L
 
 # ---- 获取/设置 schema 版本（内存缓存）----
 .schema_version_cache <- NULL
@@ -259,6 +259,44 @@ initDesignplotDb <- function(con) {
       )
     ")
     setSchemaVersion(con, 3L)
+  }
+
+  # v4: 种植栈（持久化历史，支持逐级撤销）
+  if (current_ver < 4L) {
+    DBI::dbExecute(con, "
+      CREATE TABLE IF NOT EXISTS planting_stack (
+        stack_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plant_table_name TEXT NOT NULL,
+        experiment_id TEXT NOT NULL,
+        plan_id TEXT NOT NULL,
+        stack_data BLOB NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ")
+    DBI::dbExecute(con, "
+      CREATE INDEX IF NOT EXISTS idx_planting_stack_table
+      ON planting_stack(plant_table_name)
+    ")
+    setSchemaVersion(con, 4L)
+  }
+
+  # v5: 种植恢复栈（撤销后可恢复，与撤销栈对称的双栈模型）
+  if (current_ver < 5L) {
+    DBI::dbExecute(con, "
+      CREATE TABLE IF NOT EXISTS planting_redo_stack (
+        redo_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plant_table_name TEXT NOT NULL,
+        experiment_id TEXT NOT NULL,
+        plan_id TEXT NOT NULL,
+        redo_data BLOB NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ")
+    DBI::dbExecute(con, "
+      CREATE INDEX IF NOT EXISTS idx_planting_redo_stack_table
+      ON planting_redo_stack(plant_table_name)
+    ")
+    setSchemaVersion(con, 5L)
   }
 }
 
@@ -908,7 +946,13 @@ saveSowTable <- function(field_name, sow_data, db_path = defaultSqlitePath()) {
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
-  DBI::dbWriteTable(con, DBI::Id(table = sow_table), sow_data, overwrite = TRUE)
+  if (ncol(sow_data) == 0L) {
+    # 空 data.frame：只删除旧表（若存在），不创建空表（避免 dbWriteTable 报错）
+    tables <- DBI::dbListTables(con)
+    if (sow_table %in% tables) DBI::dbRemoveTable(con, DBI::Id(table = sow_table))
+  } else {
+    DBI::dbWriteTable(con, DBI::Id(table = sow_table), sow_data, overwrite = TRUE)
+  }
   invisible(list(table_name = sow_table, row_count = nrow(sow_data), col_count = ncol(sow_data), db_path = db_path))
 }
 
@@ -1275,11 +1319,12 @@ capturePlantingUndoCheckpoint <- function(plant_table_name, experiment_id, plan_
   )
   if (!is.data.frame(all_epr)) all_epr <- data.frame()
 
-  all_plan_ids <- if (nrow(all_epr) > 0 && "plan_id" %in% names(all_epr)) {
-    unique(stats::na.omit(as.character(all_epr$plan_id)))
-  } else {
-    plan_id  # 兜底：至少捕获当前 plan_id
-  }
+  # 始终包含当前 plan_id（savePlanToSqlite 先于 capture 执行，但尚未写入 experiment_plant_runs）
+  all_plan_ids <- unique(c(
+    plan_id,
+    if (nrow(all_epr) > 0 && "plan_id" %in% names(all_epr))
+      stats::na.omit(as.character(all_epr$plan_id)) else character(0)
+  ))
   all_plan_ids <- all_plan_ids[nzchar(all_plan_ids)]
 
   plan_run <- data.frame()
@@ -1335,7 +1380,6 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
   sow_df <- checkpoint$sow_df
   if (!is.data.frame(sow_df)) sow_df <- data.frame()
   saveSowTable(field_name, sow_df, db_path = db_path)
-
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
@@ -1516,6 +1560,242 @@ getPlantingSnapshotInfo <- function(slot, db_path = defaultSqlitePath()) {
        plant_table_name = as.character(row$plant_table_name[1]),
        snapshot_label = as.character(row$snapshot_label[1]),
        created_at = as.character(row$created_at[1]))
+}
+
+# =============================================================================
+# 种植栈 — 持久化无限栈（LIFO 进栈/出栈，支持逐级撤销）
+# =============================================================================
+
+#' 将种植快照推入持久化栈
+pushPlantingStack <- function(checkpoint, db_path = defaultSqlitePath()) {
+  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) stop("无效的快照")
+  plant_table_name <- trimws(as.character(checkpoint$plant_table_name))
+  experiment_id <- trimws(as.character(checkpoint$experiment_id))
+  plan_id <- trimws(as.character(checkpoint$plan_id))
+  if (!nzchar(plant_table_name)) stop("plant_table_name 不能为空")
+  if (!nzchar(experiment_id)) stop("experiment_id 不能为空")
+  if (!nzchar(plan_id)) stop("plan_id 不能为空")
+
+  serialized <- base::serialize(checkpoint, NULL)
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  DBI::dbExecute(con, "
+    INSERT INTO planting_stack(plant_table_name, experiment_id, plan_id, stack_data, created_at)
+    VALUES (?, ?, ?, ?, datetime('now','localtime'))
+  ", params = list(plant_table_name, experiment_id, plan_id, list(serialized)))
+
+  new_id <- DBI::dbGetQuery(con, "SELECT last_insert_rowid() AS id")$id[1]
+  invisible(as.integer(new_id))
+}
+
+#' 从持久化栈弹出最近一次种植快照
+#' 返回 checkpoint list，栈空时返回 NULL
+popPlantingStack <- function(plant_table_name, db_path = defaultSqlitePath()) {
+  plant_table_name <- trimws(as.character(plant_table_name))
+  if (!nzchar(plant_table_name)) stop("plant_table_name 不能为空")
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  row <- DBI::dbGetQuery(con, "
+    SELECT stack_id, stack_data, experiment_id, plant_table_name, plan_id
+    FROM planting_stack
+    WHERE plant_table_name = ?
+    ORDER BY stack_id DESC
+    LIMIT 1
+  ", params = list(plant_table_name))
+
+  if (!is.data.frame(row) || nrow(row) == 0L) return(NULL)
+
+  checkpoint <- base::unserialize(row$stack_data[[1]])
+  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) {
+    stop("种植栈数据损坏：无法反序列化为有效快照")
+  }
+
+  DBI::dbExecute(con, "DELETE FROM planting_stack WHERE stack_id = ?",
+                 params = list(row$stack_id[1]))
+
+  checkpoint
+}
+
+#' 获取某地块种植栈深度
+getPlantingStackDepth <- function(plant_table_name, db_path = defaultSqlitePath()) {
+  plant_table_name <- trimws(as.character(plant_table_name))
+  if (!nzchar(plant_table_name)) return(0L)
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  count <- DBI::dbGetQuery(con, "
+    SELECT COUNT(*) AS n FROM planting_stack WHERE plant_table_name = ?
+  ", params = list(plant_table_name))$n[1]
+
+  as.integer(count)
+}
+
+#' 获取种植栈信息（用于 UI 展示）
+getPlantingStackInfo <- function(plant_table_name, db_path = defaultSqlitePath()) {
+  plant_table_name <- trimws(as.character(plant_table_name))
+  if (!nzchar(plant_table_name)) {
+    return(data.frame(stack_id = integer(0), experiment_id = character(0),
+                      plan_id = character(0), created_at = character(0),
+                      stringsAsFactors = FALSE))
+  }
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  rows <- DBI::dbGetQuery(con, "
+    SELECT stack_id, experiment_id, plan_id, created_at
+    FROM planting_stack
+    WHERE plant_table_name = ?
+    ORDER BY stack_id DESC
+  ", params = list(plant_table_name))
+
+  if (!is.data.frame(rows) || nrow(rows) == 0L) {
+    return(data.frame(stack_id = integer(0), experiment_id = character(0),
+                      plan_id = character(0), created_at = character(0),
+                      stringsAsFactors = FALSE))
+  }
+  rows
+}
+
+#' 清空某地块的种植栈
+clearPlantingStack <- function(plant_table_name, db_path = defaultSqlitePath()) {
+  plant_table_name <- trimws(as.character(plant_table_name))
+  if (!nzchar(plant_table_name)) return(invisible(0L))
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  deleted <- DBI::dbExecute(con, "DELETE FROM planting_stack WHERE plant_table_name = ?",
+                            params = list(plant_table_name))
+  invisible(as.integer(deleted))
+}
+
+# =============================================================================
+# 种植恢复栈 — 撤销的逆操作（与撤销栈对称的双栈模型）
+# =============================================================================
+
+#' 将种植快照推入恢复栈
+pushPlantingRedoStack <- function(checkpoint, db_path = defaultSqlitePath()) {
+  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) stop("无效的快照")
+  plant_table_name <- trimws(as.character(checkpoint$plant_table_name))
+  experiment_id <- trimws(as.character(checkpoint$experiment_id))
+  plan_id <- trimws(as.character(checkpoint$plan_id))
+  if (!nzchar(plant_table_name)) stop("plant_table_name 不能为空")
+  if (!nzchar(experiment_id)) stop("experiment_id 不能为空")
+  if (!nzchar(plan_id)) stop("plan_id 不能为空")
+
+  serialized <- base::serialize(checkpoint, NULL)
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  DBI::dbExecute(con, "
+    INSERT INTO planting_redo_stack(plant_table_name, experiment_id, plan_id, redo_data, created_at)
+    VALUES (?, ?, ?, ?, datetime('now','localtime'))
+  ", params = list(plant_table_name, experiment_id, plan_id, list(serialized)))
+
+  new_id <- DBI::dbGetQuery(con, "SELECT last_insert_rowid() AS id")$id[1]
+  invisible(as.integer(new_id))
+}
+
+#' 从恢复栈弹出最近一次快照
+#' 返回 checkpoint list，栈空时返回 NULL
+popPlantingRedoStack <- function(plant_table_name, db_path = defaultSqlitePath()) {
+  plant_table_name <- trimws(as.character(plant_table_name))
+  if (!nzchar(plant_table_name)) stop("plant_table_name 不能为空")
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  row <- DBI::dbGetQuery(con, "
+    SELECT redo_id, redo_data, experiment_id, plant_table_name, plan_id
+    FROM planting_redo_stack
+    WHERE plant_table_name = ?
+    ORDER BY redo_id DESC
+    LIMIT 1
+  ", params = list(plant_table_name))
+
+  if (!is.data.frame(row) || nrow(row) == 0L) return(NULL)
+
+  checkpoint <- base::unserialize(row$redo_data[[1]])
+  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) {
+    stop("恢复栈数据损坏：无法反序列化为有效快照")
+  }
+
+  DBI::dbExecute(con, "DELETE FROM planting_redo_stack WHERE redo_id = ?",
+                 params = list(row$redo_id[1]))
+
+  checkpoint
+}
+
+#' 获取某地块恢复栈深度
+getPlantingRedoStackDepth <- function(plant_table_name, db_path = defaultSqlitePath()) {
+  plant_table_name <- trimws(as.character(plant_table_name))
+  if (!nzchar(plant_table_name)) return(0L)
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  count <- DBI::dbGetQuery(con, "
+    SELECT COUNT(*) AS n FROM planting_redo_stack WHERE plant_table_name = ?
+  ", params = list(plant_table_name))$n[1]
+
+  as.integer(count)
+}
+
+#' 获取恢复栈信息（用于 UI 展示）
+getPlantingRedoStackInfo <- function(plant_table_name, db_path = defaultSqlitePath()) {
+  plant_table_name <- trimws(as.character(plant_table_name))
+  if (!nzchar(plant_table_name)) {
+    return(data.frame(redo_id = integer(0), experiment_id = character(0),
+                      plan_id = character(0), created_at = character(0),
+                      stringsAsFactors = FALSE))
+  }
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  rows <- DBI::dbGetQuery(con, "
+    SELECT redo_id, experiment_id, plan_id, created_at
+    FROM planting_redo_stack
+    WHERE plant_table_name = ?
+    ORDER BY redo_id DESC
+  ", params = list(plant_table_name))
+
+  if (!is.data.frame(rows) || nrow(rows) == 0L) {
+    return(data.frame(redo_id = integer(0), experiment_id = character(0),
+                      plan_id = character(0), created_at = character(0),
+                      stringsAsFactors = FALSE))
+  }
+  rows
+}
+
+#' 清空某地块的恢复栈
+clearPlantingRedoStack <- function(plant_table_name, db_path = defaultSqlitePath()) {
+  plant_table_name <- trimws(as.character(plant_table_name))
+  if (!nzchar(plant_table_name)) return(invisible(0L))
+
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  deleted <- DBI::dbExecute(con, "DELETE FROM planting_redo_stack WHERE plant_table_name = ?",
+                            params = list(plant_table_name))
+  invisible(as.integer(deleted))
 }
 
 #' 检查指定槽位是否存在快照

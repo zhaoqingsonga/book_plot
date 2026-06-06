@@ -183,6 +183,8 @@ buildDesignplotServer <- function(input, output, session) {
   plantingUndoStack <- reactiveVal(list())
   # 种植快照：DB 持久化的快照刷新触发器
   snapshotTrigger <- reactiveVal(0L)
+  # 种植栈：持久化无限栈刷新触发器
+  plantingStackTrigger <- reactiveVal(0L)
   # 各 Tab 共用的当前种植表（*.plant 表名）；四个下拉框由此同步
   activePlantTableName <- reactiveVal(NA_character_)
   unifiedPlantSelectBusy <- reactiveVal(FALSE)
@@ -501,7 +503,11 @@ buildDesignplotServer <- function(input, output, session) {
       save_result <- savePlantTable(field_name = currentFieldModelName(), plan_matrix = datasetInput(), db_path = sqlite_db_path)
       clearExperimentPlantRunByTable(save_result$table_name, sqlite_db_path)
       clearSowTableByPlantTable(save_result$table_name, sqlite_db_path)
+      # 地块重置：清空撤销/恢复栈
+      clearPlantingStack(save_result$table_name, sqlite_db_path)
+      clearPlantingRedoStack(save_result$table_name, sqlite_db_path)
       plantTableTrigger(plantTableTrigger() + 1)
+      plantingStackTrigger(plantingStackTrigger() + 1L)
       refreshSow()
       setActivePlantTable(save_result$table_name)
       showNotification(paste0("已生成种植地块：", save_result$table_name, "；防重复锁与播种列表已同步重置"), type = "message")
@@ -573,9 +579,12 @@ buildDesignplotServer <- function(input, output, session) {
   observeEvent(input$confirmDeletePlantField, {
     tryCatch({
       removeModal()
+      clearPlantingStack(createPlantTableName(currentFieldModelName()), sqlite_db_path)
+      clearPlantingRedoStack(createPlantTableName(currentFieldModelName()), sqlite_db_path)
       deletePlantTable(currentFieldModelName(), sqlite_db_path)
       showNotification("种植地块删除成功", type = "message")
       plantTableTrigger(plantTableTrigger() + 1)
+      plantingStackTrigger(plantingStackTrigger() + 1L)
       refreshAllSqlite()
     }, error = function(e) {
       showNotification(paste0("种植地块删除失败: ", e$message), type = "error")
@@ -982,8 +991,8 @@ buildDesignplotServer <- function(input, output, session) {
     sow_df <- sowTables()
     if (!is.data.frame(sow_df) || nrow(sow_df) == 0) return(NA_character_)
     sm <- as.character(sow_df$table_name[as.character(sow_df$field_name) == field])
-    if (length(sm) >= 1L) return(sm[1])
-    as.character(sow_df$table_name[1])
+    if (length(sm) >= 1L && nzchar(sm[1])) return(sm[1])
+    NA_character_
   })
 
   selectedExperimentPlantBaseMatrix <- reactive({
@@ -1297,6 +1306,11 @@ buildDesignplotServer <- function(input, output, session) {
       currentExperimentName()
     }
     stable_plan_id <- createPlantingPlanId(exp_id, exp_name, selected_plant_table)
+
+    # 先保存 plan 数据（基于 base_matrix，不含种植内容），确保快照包含 plan_runs/plan_slots
+    plan_result <- savePlanToSqlite(plan_matrix = base_matrix, experiment_name = exp_name, db_path = sqlite_db_path, plan_id = stable_plan_id, metadata = buildPersistenceMeta())
+    latest_plan_id(plan_result$plan_id)
+
     ck <- capturePlantingUndoCheckpoint(
       plant_table_name = selected_plant_table,
       experiment_id = exp_id,
@@ -1319,8 +1333,6 @@ buildDesignplotServer <- function(input, output, session) {
     plantTableTrigger(plantTableTrigger() + 1)
     setActivePlantTable(selected_plant_table)
 
-    plan_result <- savePlanToSqlite(plan_matrix = base_matrix, experiment_name = exp_name, db_path = sqlite_db_path, plan_id = stable_plan_id, metadata = buildPersistenceMeta())
-    latest_plan_id(plan_result$plan_id)
     saveAssignmentsToSqlite(
       plan_id = plan_result$plan_id,
       planted_matrix = planted,
@@ -1337,6 +1349,11 @@ buildDesignplotServer <- function(input, output, session) {
     stk <- c(stk, list(ck))
     if (length(stk) > 2L) stk <- utils::tail(stk, 2)
     plantingUndoStack(stk)
+    # 持久化种植栈（无限历史，刷新页面后仍可撤销）
+    pushPlantingStack(ck, sqlite_db_path)
+    # 新种植操作使恢复栈失效（类似 Word：新操作后无法 redo）
+    clearPlantingRedoStack(selected_plant_table, sqlite_db_path)
+    plantingStackTrigger(plantingStackTrigger() + 1L)
     if (isTRUE(overwrite_mode)) {
       showNotification(paste0("试验种植完成（覆盖重种），结果已写入：", selected_plant_table, "；", sow_result$table_name, "；plan_id: ", plan_result$plan_id), type = "message")
     } else {
@@ -1377,26 +1394,77 @@ buildDesignplotServer <- function(input, output, session) {
   })
 
   output$undoExperimentPlantingUi <- renderUI({
-    n <- length(plantingUndoStack())
-    lbl <- if (n > 0L) {
-      sprintf("撤销上一步种植（还可 %d 次）", n)
+    plantingStackTrigger()
+    pt <- selectedPlantTableName()
+    depth <- if (!is.na(pt) && nzchar(trimws(as.character(pt)))) {
+      getPlantingStackDepth(pt, sqlite_db_path)
+    } else 0L
+    if (depth > 0L) {
+      actionButton("undoExperimentPlanting",
+        label = tags$span(icon("undo", class = "fa-xs"), " 撤销", tags$b(depth)),
+        class = "btn-warning btn-sm", width = "100%")
     } else {
-      "撤销上一步种植（当前无可撤）"
+      actionButton("undoExperimentPlanting",
+        label = tags$span(icon("undo", class = "fa-xs"), " 撤销"),
+        class = "btn-default btn-sm", width = "100%")
     }
-    cls <- if (n > 0L) "btn-warning" else "btn-default"
-    actionButton("undoExperimentPlanting", lbl, class = cls, width = "100%")
   })
 
   observeEvent(input$undoExperimentPlanting, {
-    stk <- plantingUndoStack()
-    if (length(stk) == 0L) {
-      showNotification("没有可撤销的种植操作（仅保留最近两次，且刷新页面后会清空）", type = "warning")
+    pt <- selectedPlantTableName()
+    if (is.na(pt) || !nzchar(trimws(as.character(pt)))) {
+      showNotification("请先选择种植地块", type = "warning")
       return(invisible(NULL))
     }
-    ck <- stk[[length(stk)]]
+    pt <- trimws(as.character(pt))
+    field_name <- sub("\\.plant$", "", pt)
+
+    # 优先从持久化栈弹出（无限历史）
+    ck <- tryCatch(popPlantingStack(pt, sqlite_db_path), error = function(e) {
+      NULL
+    })
+
+    # 持久化栈为空时回退到内存栈（兼容过渡期旧数据）
+    if (is.null(ck)) {
+      stk <- plantingUndoStack()
+      if (length(stk) == 0L) {
+        showNotification("种植栈为空，没有可撤销的种植操作", type = "warning")
+        return(invisible(NULL))
+      }
+      ck <- stk[[length(stk)]]
+      if (!identical(trimws(as.character(ck$plant_table_name)), pt)) {
+        showNotification("当前地块无可撤销操作", type = "warning")
+        return(invisible(NULL))
+      }
+      plantingUndoStack(stk[-length(stk)])
+    }
+
+    # 撤销前：捕获当前状态推入恢复栈（以便后续 redo）
+    tryCatch({
+      current_exp_id <- tryCatch({
+        con <- connectDesignplotDb(sqlite_db_path)
+        on.exit(DBI::dbDisconnect(con), add = TRUE)
+        initDesignplotDb(con)
+        rows <- DBI::dbGetQuery(con,
+          "SELECT experiment_id, plan_id FROM experiment_plant_runs WHERE plant_table_name = ?",
+          params = list(pt))
+        if (is.data.frame(rows) && nrow(rows) > 0) as.character(rows$experiment_id[1]) else "undo"
+      }, error = function(e) "undo")
+      current_pid <- "undo"
+      redo_ck <- capturePlantingUndoCheckpoint(
+        plant_table_name = pt,
+        experiment_id = current_exp_id,
+        plan_id = current_pid,
+        field_name = field_name,
+        db_path = sqlite_db_path
+      )
+      pushPlantingRedoStack(redo_ck, sqlite_db_path)
+    }, error = function(e) {
+      # 捕获当前状态失败不影响撤销本身
+    })
+
     tryCatch({
       restorePlantingUndoCheckpoint(ck, sqlite_db_path)
-      plantingUndoStack(stk[-length(stk)])
       experimentPlantedState(list(table_name = ck$plant_table_name, matrix = ck$plant_matrix))
       if (is.data.frame(ck$plan_run) && nrow(ck$plan_run) > 0L && nzchar(trimws(as.character(ck$plan_id)))) {
         latest_plan_id(as.character(ck$plan_id[1]))
@@ -1405,12 +1473,93 @@ buildDesignplotServer <- function(input, output, session) {
       }
       eid_undo <- trimws(as.character(ck$experiment_id))
       if (nzchar(eid_undo)) pendingSqliteExperimentSelection(eid_undo)
+      fieldLayoutCache(list(key = NA_character_, data = NULL))
       plantTableTrigger(plantTableTrigger() + 1L)
+      plantingStackTrigger(plantingStackTrigger() + 1L)
       refreshAllSqlite()
+      refreshSow()
       setActivePlantTable(ck$plant_table_name)
-      showNotification("已撤销上一步「执行试验种植」", type = "message")
+      showNotification("已撤销上一步种植操作", type = "message")
     }, error = function(e) {
       showNotification(paste0("撤销失败: ", e$message), type = "error")
+    })
+  })
+
+  # ---- 恢复（Redo）：撤销的逆操作 ----
+  output$redoExperimentPlantingUi <- renderUI({
+    plantingStackTrigger()
+    pt <- selectedPlantTableName()
+    depth <- if (!is.na(pt) && nzchar(trimws(as.character(pt)))) {
+      getPlantingRedoStackDepth(pt, sqlite_db_path)
+    } else 0L
+    if (depth > 0L) {
+      actionButton("redoExperimentPlanting",
+        label = tags$span(icon("redo", class = "fa-xs"), " 恢复", tags$b(depth)),
+        class = "btn-info btn-sm", width = "100%")
+    } else {
+      actionButton("redoExperimentPlanting",
+        label = tags$span(icon("redo", class = "fa-xs"), " 恢复"),
+        class = "btn-default btn-sm", width = "100%")
+    }
+  })
+
+  observeEvent(input$redoExperimentPlanting, {
+    pt <- selectedPlantTableName()
+    if (is.na(pt) || !nzchar(trimws(as.character(pt)))) {
+      showNotification("请先选择种植地块", type = "warning")
+      return(invisible(NULL))
+    }
+    pt <- trimws(as.character(pt))
+    field_name <- sub("\\.plant$", "", pt)
+
+    ck <- tryCatch(popPlantingRedoStack(pt, sqlite_db_path), error = function(e) NULL)
+    if (is.null(ck)) {
+      showNotification("恢复栈为空，没有可恢复的种植操作", type = "warning")
+      return(invisible(NULL))
+    }
+
+    # 恢复前：捕获当前状态推入撤销栈（以便后续再撤销）
+    tryCatch({
+      current_exp_id <- tryCatch({
+        con <- connectDesignplotDb(sqlite_db_path)
+        on.exit(DBI::dbDisconnect(con), add = TRUE)
+        initDesignplotDb(con)
+        rows <- DBI::dbGetQuery(con,
+          "SELECT experiment_id FROM experiment_plant_runs WHERE plant_table_name = ?",
+          params = list(pt))
+        if (is.data.frame(rows) && nrow(rows) > 0) as.character(rows$experiment_id[1]) else "redo"
+      }, error = function(e) "redo")
+      undo_ck <- capturePlantingUndoCheckpoint(
+        plant_table_name = pt,
+        experiment_id = current_exp_id,
+        plan_id = "redo",
+        field_name = field_name,
+        db_path = sqlite_db_path
+      )
+      pushPlantingStack(undo_ck, sqlite_db_path)
+    }, error = function(e) {
+      # 捕获当前状态失败不影响恢复本身
+    })
+
+    tryCatch({
+      restorePlantingUndoCheckpoint(ck, sqlite_db_path)
+      experimentPlantedState(list(table_name = ck$plant_table_name, matrix = ck$plant_matrix))
+      if (is.data.frame(ck$plan_run) && nrow(ck$plan_run) > 0L && nzchar(trimws(as.character(ck$plan_id)))) {
+        latest_plan_id(as.character(ck$plan_id[1]))
+      } else {
+        latest_plan_id(NULL)
+      }
+      eid_redo <- trimws(as.character(ck$experiment_id))
+      if (nzchar(eid_redo)) pendingSqliteExperimentSelection(eid_redo)
+      fieldLayoutCache(list(key = NA_character_, data = NULL))
+      plantTableTrigger(plantTableTrigger() + 1L)
+      plantingStackTrigger(plantingStackTrigger() + 1L)
+      refreshAllSqlite()
+      refreshSow()
+      setActivePlantTable(ck$plant_table_name)
+      showNotification("已恢复上一步种植操作", type = "message")
+    }, error = function(e) {
+      showNotification(paste0("恢复失败: ", e$message), type = "error")
     })
   })
 

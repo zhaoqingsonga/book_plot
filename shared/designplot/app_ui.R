@@ -124,10 +124,7 @@ buildDesignplotUI <- function(){
                                   tags$div(style = "height:6px;"),
                                   checkboxInput("allowExperimentReplant", "允许覆盖重种", value = FALSE),
                                   tags$p("阻止重复种植，避免误操作。", style = "margin:0 0 6px 0;color:#6b7280;font-size:11px;"),
-                                  uiOutput("runExperimentPlantingUi"),
-                                  tags$div(style = "height:4px;"),
-                                  tags$p("撤销（仅本会话）", style = "margin:0 0 4px 0;color:#6b7280;font-size:11px;"),
-                                  uiOutput("undoExperimentPlantingUi")
+                                  uiOutput("runExperimentPlantingUi")
                                 ),
                                 # Panel 3: 区域补种（堆叠在Panel 2下方）
                                 tags$div(
@@ -227,6 +224,15 @@ buildDesignplotUI <- function(){
                                                   selectInput("layout_field_select", "选择地块", choices = c("暂无地块" = ""), selected = "", width = "100%"),
                                                   uiOutput("fieldLayoutError"),
                                                    plotOutput("fieldLayoutPlot", height = "600px"),
+                                                   tags$div(style = "height:10px;"),
+                                                   tags$div(style = "background:#f8fafc;border:1px solid #dbe4ee;border-radius:8px;padding:10px;",
+                                                     tags$p("撤销 / 恢复", style = "margin:0 0 6px 0;color:#6b7280;font-size:11px;"),
+                                                     fluidRow(
+                                                       column(6, uiOutput("undoExperimentPlantingUi")),
+                                                       column(6, uiOutput("redoExperimentPlantingUi"))
+                                                     )
+                                                   ),
+                                                   tags$div(style = "height:6px;"),
                                                    downloadButton("downloadFieldLayoutPlot", "下载布局图（PNG）")
                                          ))))
     )
