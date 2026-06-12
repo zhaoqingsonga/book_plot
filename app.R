@@ -27,6 +27,10 @@ source("shared/mod_experiments.R")
 source("shared/mod_line_selection.R")
 source("shared/mod_population.R")
 source("shared/mod_yield_test.R")
+source("shared/mod_settings.R")
+
+# 加载E智导入功能
+source("shared/import_traits.R")
 
 # 加载designplot模块
 source("shared/designplot/constants.R")
@@ -91,6 +95,13 @@ ui <- navbarPage(
     "田间种植",
     icon = icon("seedling"),
     buildDesignplotUI()
+  ),
+
+  # === 6. E智导入 ===
+  tabPanel(
+    "E智导入",
+    icon = icon("upload"),
+    settings_ui("settings_mod")
   ),
 
   # === 关于 ===
@@ -199,6 +210,7 @@ server <- function(input, output, session) {
   population_server("pop_mod")
   line_selection_server("line_mod")
   yield_test_server("yield_mod")
+  settings_server("settings_mod")
   buildDesignplotServer(input, output, session)
 
   # 中转：mod_experiments 导入成功后向 designplot 发送的 refresh 消息，
