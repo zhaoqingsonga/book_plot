@@ -192,7 +192,7 @@ line_selection_ui <- function(id) {
 
                 selectInput(ns("view_exp"), "选择试验", choices = NULL, width = "100%"),
                 div(class = "button-group",
-                  actionButton(ns("btn_view_refresh"), "刷新", icon = icon("refresh"), class = "btn-info btn-sm"),
+                  actionButton(ns("btn_view_analyze"), "分析", icon = icon("chart-bar"), class = "btn-info btn-sm"),
                   downloadButton(ns("btn_view_download"), "下载", class = "btn-success btn-sm"),
                   actionButton(ns("btn_view_delete"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
                   downloadButton(ns("btn_view_download_all"), "下载全部", class = "btn-warning btn-sm")
@@ -557,16 +557,104 @@ line_selection_server <- function(id) {
       })
     })
 
-    observeEvent(input$btn_view_refresh, {
-      if (!is.null(input$view_exp) && input$view_exp != "") {
-        tryCatch({
-          rv$view_data <- getLineSelectionFieldRecord(input$view_exp, db_path = db_path)
-          showNotification("已刷新", type = "message")
-        }, error = function(e) {
-          showNotification(paste("刷新失败:", e$message), type = "error")
-        })
-      }
+    rv$analysis_result <- NULL
+
+    observeEvent(input$btn_view_analyze, {
+      req(rv$view_data)
+      showNotification("正在分析...", type = "message", duration = 2)
+      rv$analysis_result <- tryCatch({
+        run_analysis(rv$view_data, "line_selection")
+      }, error = function(e) {
+        showNotification(paste("分析失败:", e$message), type = "error", duration = 5)
+        NULL
+      })
+      showModal(modalDialog(
+        title = div(icon("leaf"), "株行数据分析"),
+        size = "xl", easyClose = TRUE, footer = modalButton("关闭"),
+        uiOutput(ns("analysis_modal_body"))
+      ))
     })
+
+    output$analysis_modal_body <- renderUI({
+      req(rv$analysis_result)
+      result <- rv$analysis_result
+      trial_info <- result$trial_info
+
+      tabs <- list()
+
+      tabs$info <- tabPanel("分析信息", icon = icon("info-circle"),
+        div(class = "p-3",
+          tags$h5(paste("试验类型：", trial_info$label)),
+          tags$p(trial_info$desc),
+          lapply(result$messages, function(m) {
+            div(class = if(grepl("^⚠️", m)) "alert alert-warning" else "alert alert-info", m)
+          })
+        )
+      )
+
+      if (!is.null(result$tables$sele_overview)) {
+        tabs$sele <- tabPanel("选择概况", icon = icon("check-square"),
+          div(class = "p-3",
+            tags$h5("选择统计"),
+            renderDataTable({DT::datatable(result$tables$sele_overview,
+              options = list(dom = 't'), rownames = FALSE, class = "compact")}),
+            if (!is.null(result$plots$sele_dist_chart)) tagList(
+              tags$hr(), renderPlot({ result$plots$sele_dist_chart }, height = 350)
+            ),
+            if (!is.null(result$tables$sele_dist)) tagList(
+              tags$hr(), tags$h5("选择数分布明细"),
+              renderDataTable({DT::datatable(result$tables$sele_dist,
+                options = list(dom = 't', pageLength = 10), rownames = FALSE, class = "compact")})
+            )
+          )
+        )
+      }
+
+      if (!is.null(result$tables$progeny_top)) {
+        tabs$progeny <- tabPanel("后代分析", icon = icon("list-ol"),
+          div(class = "p-3",
+            tags$h5("每材料后代行数 Top 20"),
+            renderDataTable({DT::datatable(result$tables$progeny_top,
+              options = list(pageLength = 20, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+            if (!is.null(result$plots$progeny_chart)) tagList(
+              tags$hr(), renderPlot({ result$plots$progeny_chart }, height = 400)
+            )
+          )
+        )
+      }
+
+      if (!is.null(result$tables$morph_stats)) {
+        tabs$traits <- tabPanel("形态性状", icon = icon("table"),
+          div(class = "p-3",
+            tags$h5("形态性状统计"),
+            renderDataTable({DT::datatable(result$tables$morph_stats,
+              options = list(dom = 't', pageLength = 10), rownames = FALSE, class = "compact")})
+          )
+        )
+      }
+
+      tabs$export <- tabPanel("导出", icon = icon("download"),
+        div(class = "p-3", tags$h5("导出分析结果"),
+          downloadButton(ns("btn_export_zip"), "下载压缩包（图表PNG + Excel + HTML报告）", class = "btn-primary btn-lg"))
+      )
+
+      do.call(tabsetPanel, c(list(id = ns("analysis_tabs")), unname(tabs)))
+    })
+
+    output$btn_export_zip <- downloadHandler(
+      filename = function() {
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = rv$view_exp_name,
+          default_name = "line_selection"
+        )
+        paste0("株行分析_", exp_name, ".zip")
+      },
+      content = function(file) {
+        req(rv$analysis_result)
+        build_analysis_zip(rv$analysis_result, file)
+      }
+    )
 
     output$view_table <- renderFieldRecordTable(reactive(rv$view_data))
 

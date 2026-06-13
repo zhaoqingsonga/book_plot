@@ -797,7 +797,14 @@ yield_test_server <- function(id) {
     })
 
     output$btn_export_zip <- downloadHandler(
-      filename = function() paste0("产比分析_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".zip"),
+      filename = function() {
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = rv$view_exp_name,
+          default_name = "yield_test"
+        )
+        paste0("产比分析_", exp_name, ".zip")
+      },
       content = function(file) {
         req(rv$analysis_result)
         build_analysis_zip(rv$analysis_result, file)

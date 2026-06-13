@@ -200,7 +200,7 @@ population_ui <- function(id) {
 
                 selectInput(ns("view_exp"), "选择试验", choices = NULL, width = "100%"),
                 div(class = "button-group",
-                  actionButton(ns("btn_view_refresh"), "刷新", icon = icon("refresh"), class = "btn-info btn-sm"),
+                  actionButton(ns("btn_view_analyze"), "分析", icon = icon("chart-bar"), class = "btn-info btn-sm"),
                   downloadButton(ns("btn_view_download"), "下载", class = "btn-success btn-sm"),
                   actionButton(ns("btn_view_delete"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
                   downloadButton(ns("btn_view_download_all"), "下载全部", class = "btn-warning btn-sm")
@@ -538,16 +538,105 @@ population_server <- function(id) {
       })
     })
 
-    observeEvent(input$btn_view_refresh, {
-      if (!is.null(input$view_exp) && input$view_exp != "") {
-        tryCatch({
-          rv$view_data <- getPopulationFieldRecord(input$view_exp, db_path = db_path)
-          showNotification("已刷新", type = "message")
-        }, error = function(e) {
-          showNotification(paste("刷新失败:", e$message), type = "error")
-        })
-      }
+    rv$analysis_result <- NULL
+
+    observeEvent(input$btn_view_analyze, {
+      req(rv$view_data)
+      showNotification("正在分析...", type = "message", duration = 2)
+      rv$analysis_result <- tryCatch({
+        run_analysis(rv$view_data, "population")
+      }, error = function(e) {
+        showNotification(paste("分析失败:", e$message), type = "error", duration = 5)
+        NULL
+      })
+      showModal(modalDialog(
+        title = div(icon("dna"), "群体数据分析"),
+        size = "xl", easyClose = TRUE, footer = modalButton("关闭"),
+        uiOutput(ns("analysis_modal_body"))
+      ))
     })
+
+    output$analysis_modal_body <- renderUI({
+      req(rv$analysis_result)
+      result <- rv$analysis_result
+      trial_info <- result$trial_info
+
+      tabs <- list()
+
+      tabs$info <- tabPanel("分析信息", icon = icon("info-circle"),
+        div(class = "p-3",
+          tags$h5(paste("试验类型：", trial_info$label)),
+          tags$p(trial_info$desc),
+          lapply(result$messages, function(m) {
+            div(class = if(grepl("^⚠️", m)) "alert alert-warning" else "alert alert-info", m)
+          })
+        )
+      )
+
+      if (!is.null(result$tables$gen_dist)) {
+        tabs$gen <- tabPanel("世代分析", icon = icon("layer-group"),
+          div(class = "p-3",
+            tags$h5("世代分布"),
+            renderDataTable({DT::datatable(result$tables$gen_dist,
+              options = list(dom = 't', pageLength = 10), rownames = FALSE, class = "compact")}),
+            if (!is.null(result$plots$gen_dist_chart)) tagList(
+              tags$hr(), renderPlot({ result$plots$gen_dist_chart }, height = 350)
+            ),
+            tags$hr(), tags$h5("世代晋级追踪"),
+            renderDataTable({DT::datatable(result$tables$gen_track,
+              options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+            if (!is.null(result$plots$gen_track_chart)) tagList(
+              tags$hr(), renderPlot({ result$plots$gen_track_chart }, height = 350)
+            )
+          )
+        )
+      }
+
+      if (!is.null(result$tables$cross_top)) {
+        tabs$cross <- tabPanel("亲本组合", icon = icon("venus-mars"),
+          div(class = "p-3",
+            tags$h5("亲本组合 Top 20"),
+            renderDataTable({DT::datatable(result$tables$cross_top,
+              options = list(pageLength = 20, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+            if (!is.null(result$plots$cross_chart)) tagList(
+              tags$hr(), renderPlot({ result$plots$cross_chart }, height = 500)
+            )
+          )
+        )
+      }
+
+      if (!is.null(result$tables$trait_overview)) {
+        tabs$traits <- tabPanel("性状概览", icon = icon("table"),
+          div(class = "p-3",
+            tags$h5("核心性状统计"),
+            renderDataTable({DT::datatable(result$tables$trait_overview,
+              options = list(dom = 't', pageLength = 10), rownames = FALSE, class = "compact")})
+          )
+        )
+      }
+
+      tabs$export <- tabPanel("导出", icon = icon("download"),
+        div(class = "p-3", tags$h5("导出分析结果"),
+          downloadButton(ns("btn_export_zip"), "下载压缩包（图表PNG + Excel + HTML报告）", class = "btn-primary btn-lg"))
+      )
+
+      do.call(tabsetPanel, c(list(id = ns("analysis_tabs")), unname(tabs)))
+    })
+
+    output$btn_export_zip <- downloadHandler(
+      filename = function() {
+        exp_name <- getExperimentFilenameLabel(
+          records = rv$records,
+          experiment_id = rv$view_exp_name,
+          default_name = "population"
+        )
+        paste0("群体分析_", exp_name, ".zip")
+      },
+      content = function(file) {
+        req(rv$analysis_result)
+        build_analysis_zip(rv$analysis_result, file)
+      }
+    )
 
     output$view_table <- renderFieldRecordTable(reactive(rv$view_data))
 
