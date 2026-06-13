@@ -197,7 +197,7 @@ yield_test_ui <- function(id) {
 
                 selectInput(ns("view_exp"), "选择试验", choices = NULL, width = "100%"),
                 div(class = "button-group",
-                  actionButton(ns("btn_view_refresh"), "刷新", icon = icon("refresh"), class = "btn-info btn-sm"),
+                  actionButton(ns("btn_view_analyze"), "分析", icon = icon("chart-bar"), class = "btn-info btn-sm"),
                   downloadButton(ns("btn_view_download"), "下载", class = "btn-success btn-sm"),
                   actionButton(ns("btn_view_delete"), "删除", icon = icon("trash"), class = "btn-danger btn-sm"),
                   downloadButton(ns("btn_view_download_all"), "下载全部", class = "btn-warning btn-sm")
@@ -548,16 +548,261 @@ yield_test_server <- function(id) {
       })
     })
 
-    observeEvent(input$btn_view_refresh, {
-      if (!is.null(input$view_exp) && input$view_exp != "") {
-        tryCatch({
-          rv$view_data <- getYieldTestFieldRecord(input$view_exp, db_path = db_path)
-          showNotification("已刷新", type = "message")
-        }, error = function(e) {
-          showNotification(paste("刷新失败:", e$message), type = "error")
-        })
-      }
+    # 分析结果缓存
+    rv$analysis_result <- NULL
+
+    observeEvent(input$btn_view_analyze, {
+      req(rv$view_data)
+      showNotification("正在分析...", type = "message", duration = 2)
+      rv$analysis_result <- tryCatch({
+        run_analysis(rv$view_data, "yield_test")
+      }, error = function(e) {
+        showNotification(paste("分析失败:", e$message), type = "error", duration = 5)
+        NULL
+      })
+
+      showModal(modalDialog(
+        title = div(icon("chart-bar"), "产比数据分析"),
+        size = "xl", easyClose = TRUE, footer = modalButton("关闭"),
+        uiOutput(ns("analysis_modal_body"))
+      ))
     })
+
+    output$analysis_modal_body <- renderUI({
+      req(rv$analysis_result)
+      result <- rv$analysis_result
+      trial_info <- result$trial_info
+      caps <- result$capabilities
+
+      tabs <- list()
+
+      # === Info Tab ===
+      tabs$info <- tabPanel("分析信息", icon = icon("info-circle"),
+        div(class = "p-3",
+          tags$h5(paste("试验类型：", trial_info$label)),
+          tags$p(trial_info$desc),
+          if (length(caps$available) > 0) tagList(
+            tags$h6("可用分析："),
+            tags$ul(lapply(caps$available, tags$li))
+          ),
+          if (length(caps$unavailable) > 0) tagList(
+            tags$h6("不可用分析："),
+            tags$ul(class = "text-muted", lapply(caps$unavailable, tags$li))
+          ),
+          if (length(result$messages) > 0) lapply(result$messages, function(m) {
+            div(class = if(grepl("^⚠️|跳过", m)) "alert alert-warning" else "alert alert-info",
+              style = "white-space:pre-wrap;", m)
+          })
+        )
+      )
+
+      # === Yield Tab ===
+      if (!is.null(result$tables$yield_stats)) {
+        tabs$yield <- tabPanel("产量概览", icon = icon("chart-bar"),
+          div(class = "p-3",
+            tags$h5("产量核心统计"),
+            renderDataTable({DT::datatable(result$tables$yield_stats,
+              options = list(dom = 't', pageLength = 5), rownames = FALSE, class = "compact")}),
+            # === 分地点产量核心统计（多地点时显示） ===
+            if (isTRUE(trial_info$is_multi_site) &&
+                !is.null(result$tables$per_site_yield_stats)) {
+              tagList(
+                tags$hr(), tags$h5("分地点产量核心统计"),
+                renderDataTable({DT::datatable(result$tables$per_site_yield_stats,
+                  options = list(dom = 't', pageLength = length(trial_info$places)),
+                  rownames = FALSE, class = "compact")}),
+                if (!is.null(result$tables$per_site_growth_stats)) tagList(
+                  tags$h5("分地点生育期统计", style = "margin-top:15px;"),
+                  renderDataTable({DT::datatable(result$tables$per_site_growth_stats,
+                    options = list(dom = 't', pageLength = length(trial_info$places)),
+                    rownames = FALSE, class = "compact")})
+                ),
+                if (!is.null(result$tables$per_site_increase_stats)) tagList(
+                  tags$h5("分地点增产统计", style = "margin-top:15px;"),
+                  renderDataTable({DT::datatable(result$tables$per_site_increase_stats,
+                    options = list(dom = 't', pageLength = length(trial_info$places)),
+                    rownames = FALSE, class = "compact")})
+                )
+              )
+            },
+            tags$hr(), tags$h5("产量与生育期分布"),
+            fluidRow(
+              column(6, if (!is.null(result$plots$yield_dist)) renderPlot({ result$plots$yield_dist }, height = 380)),
+              column(6, if (!is.null(result$plots$yield_grade)) renderPlot({ result$plots$yield_grade }, height = 380))
+            ),
+            fluidRow(
+              column(6, if (!is.null(result$plots$increase_dist)) renderPlot({ result$plots$increase_dist }, height = 380)),
+              column(6, if (!is.null(result$plots$growth_dist)) renderPlot({ result$plots$growth_dist }, height = 380))
+            ),
+            # === 分地点产量与生育期分布（多地点时并排展示） ===
+            if (isTRUE(trial_info$is_multi_site) && !is.null(result$per_site_plots)) {
+              n_locs <- length(result$per_site_plots$yield_dist)
+              if (n_locs > 0) {
+                col_width <- if (n_locs <= 2) 6L else if (n_locs == 3) 4L else 3L
+
+                plot_types <- list(
+                  yield_dist    = "亩产分布",
+                  yield_grade   = "产量等级分布",
+                  increase_dist = "增产分布",
+                  growth_dist   = "生育期分布"
+                )
+
+                plot_rows <- lapply(names(plot_types), function(ptype) {
+                  locs <- names(result$per_site_plots[[ptype]])
+                  if (length(locs) == 0) return(NULL)
+                  cols <- lapply(locs, function(loc) {
+                    column(col_width,
+                      tags$div(style = "text-align:center; font-weight:bold; margin-bottom:4px; font-size:12px;", loc),
+                      renderPlot({ result$per_site_plots[[ptype]][[loc]] }, height = 300)
+                    )
+                  })
+                  fluidRow(cols)
+                })
+                plot_rows <- plot_rows[!vapply(plot_rows, is.null, logical(1))]
+
+                c(list(tags$hr(), tags$h5("分地点产量与生育期分布")), plot_rows)
+              }
+            },
+            if (!is.null(result$plots$scatter_growth)) tagList(
+              tags$hr(), tags$h5("性状与产量关系"),
+              fluidRow(
+                column(4, renderPlot({ result$plots$scatter_growth }, height = 300)),
+                column(4, renderPlot({ result$plots$scatter_height }, height = 300)),
+                column(4, renderPlot({ result$plots$scatter_grain }, height = 300))
+              )
+            ),
+            if (!is.null(result$plots$corr_matrix)) tagList(
+              tags$hr(), tags$h5("性状相关性"),
+              renderPlot({ result$plots$corr_matrix() }, height = 420)
+            ),
+            tags$hr(), tags$h5("产量排名"),
+            renderDataTable({DT::datatable(result$tables$yield_ranking,
+              options = list(pageLength = 10, scrollX = TRUE, dom = 'ftip'),
+              rownames = FALSE, class = "compact")}),
+            # === 各地点的平均（多地点时按品种跨地点汇总） ===
+            if (!is.null(result$tables$cross_location_avg)) tagList(
+              tags$hr(), tags$h5("各地点的平均"),
+              renderDataTable({DT::datatable(result$tables$cross_location_avg,
+                options = list(pageLength = 15, scrollX = TRUE, dom = 'ftip'),
+                rownames = FALSE, class = "compact")})
+            )
+          )
+        )
+      }
+
+      # === Quality Tab ===
+      qt_nms <- grep("^quality_", names(result$plots), value = TRUE)
+      if (length(qt_nms) > 0) {
+        tabs$quality <- tabPanel("性状分布", icon = icon("chart-pie"),
+          div(class = "p-3", tags$h5("质量性状分布"),
+            do.call(fluidRow, lapply(qt_nms, function(nm) {
+              column(6, renderPlot({ result$plots[[nm]] }, height = 300))
+            }))
+          )
+        )
+      }
+
+      # === Screening Tab ===
+      if (!is.null(result$tables$promoted)) {
+        tabs$screening <- tabPanel("品种筛选", icon = icon("filter"),
+          div(class = "p-3",
+            tags$h5("晋级材料"),
+            renderDataTable({DT::datatable(result$tables$promoted,
+              options = list(pageLength = 10, scrollX = TRUE, dom = 'ftip'),
+              rownames = FALSE, class = "compact")}),
+            if (!is.null(result$plots$comparison)) tagList(
+              tags$hr(), tags$h5("筛选前后性状对比"),
+              renderPlot({ result$plots$comparison }, height = 500)
+            ),
+            if (!is.null(result$plots$radar)) tagList(
+              tags$hr(), tags$h5("优良品种雷达图"),
+              renderPlot({
+                rd <- result$plots$radar
+                req(rd)
+                n_varieties <- nrow(rd$data) - 2L
+                colors <- rainbow(n_varieties)
+                fmsb::radarchart(rd$data, axistype = 1,
+                  title = paste0("Top ", rd$top_n, " 品种综合性能"),
+                  vlabels = rd$labels, vlcex = 0.8,
+                  pcol = colors, plwd = 2,
+                  cglcol = "gray80", cglty = 1, cglwd = 0.8)
+                legend(x = "bottomright", legend = rd$names,
+                  col = colors, lwd = 2, cex = 0.9, bty = "n")
+              }, height = 500)
+            ),
+            if (!is.null(result$tables$description)) tagList(
+              tags$hr(), tags$h5("晋级材料综合性状描述"),
+              tags$pre(class = "bg-light p-3",
+                style = "max-height:300px;overflow-y:auto;white-space:pre-wrap;font-size:13px;",
+                result$tables$description)
+            )
+          )
+        )
+      }
+
+      # === Parent Tab ===
+      if (!is.null(result$tables$parent_stats)) {
+        tabs$parent <- tabPanel("亲本分析", icon = icon("venus-mars"),
+          div(class = "p-3",
+            tags$h5("优良亲本"),
+            renderDataTable({DT::datatable(result$tables$parent_stats,
+              options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+            tags$hr(), tags$h5("优良组合"),
+            renderDataTable({DT::datatable(result$tables$cross_stats,
+              options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+            if (!is.null(result$plots$parent_plot)) tagList(
+              tags$hr(), renderPlot({ result$plots$parent_plot }, height = 600)
+            )
+          )
+        )
+      }
+
+      # === GGE Tab ===
+      if (!is.null(result$plots$gge_biplot)) {
+        tabs$gge <- tabPanel("GGE分析", icon = icon("globe"),
+          div(class = "p-3",
+            tags$h5("GGE 双标图"), renderPlot({ result$plots$gge_biplot }, height = 500),
+            tags$hr(), tags$h5("稳定性 × 产量"), renderPlot({ result$plots$gge_stability }, height = 500),
+            if (!is.null(result$plots$gge_heatmap)) tagList(
+              tags$hr(), tags$h5("G×E 互作热图"), renderPlot({ result$plots$gge_heatmap }, height = 500)
+            ),
+            tags$hr(), tags$h5("基因型排名"), renderPlot({ result$plots$gge_ranking }, height = 500),
+            if (!is.null(result$tables$gge_stable) && nrow(result$tables$gge_stable) > 0) tagList(
+              tags$hr(), tags$h5("高产稳定基因型"),
+              renderDataTable({DT::datatable(result$tables$gge_stable,
+                options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")})
+            )
+          )
+        )
+      }
+
+      # === Cross Site Tab ===
+      if (!is.null(result$tables$cross_site_ranking)) {
+        tabs$cross_site <- tabPanel("跨地点排名", icon = icon("map-marked-alt"),
+          div(class = "p-3", tags$h5("跨地点产量排名"),
+            renderDataTable({DT::datatable(result$tables$cross_site_ranking,
+              options = list(pageLength = 10, scrollX = TRUE, dom = 'ftip'),
+              rownames = FALSE, class = "compact")})
+          )
+        )
+      }
+
+      # === Export Tab ===
+      tabs$export <- tabPanel("导出", icon = icon("download"),
+        div(class = "p-3", tags$h5("导出分析结果"),
+          downloadButton(ns("btn_export_zip"), "下载压缩包（图表PNG + Excel + HTML报告）", class = "btn-primary btn-lg"))
+      )
+
+      do.call(tabsetPanel, c(list(id = ns("analysis_tabs")), unname(tabs)))
+    })
+
+    output$btn_export_zip <- downloadHandler(
+      filename = function() paste0("产比分析_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".zip"),
+      content = function(file) {
+        req(rv$analysis_result)
+        build_analysis_zip(rv$analysis_result, file)
+      }
+    )
 
     output$view_table <- renderFieldRecordTable(reactive(rv$view_data))
 
