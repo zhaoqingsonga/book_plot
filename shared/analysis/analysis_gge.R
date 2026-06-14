@@ -77,10 +77,32 @@ analyze_gge <- function(df, trial_info) {
   gd <- gd[gd[[gen_col]] %in% keep, , drop = FALSE]
 
   # ==== 3. 聚合GxE矩阵 ====
+  # 构建 stageid + name 组合标签（所有图表统一使用）
   ge_mat <- gd %>%
-    dplyr::group_by(env = place, gen = .data[[gen_col]]) %>%
+    dplyr::group_by(env = place, gen_raw = .data[[gen_col]]) %>%
     dplyr::summarise(yield = round(mean(yield, na.rm = TRUE), 2), .groups = "drop")
-  # 三重保障：yield必须是numeric
+
+  # 拼接 display 标签：stageid\nname（如果 name 列存在且不同于 stageid）
+  if ("name" %in% colnames(gd) && gen_col == "stageid") {
+    name_lu <- gd %>%
+      dplyr::select(gen_raw = !!sym(gen_col), name) %>%
+      dplyr::filter(!is.na(name)) %>%
+      dplyr::distinct() %>%
+      dplyr::group_by(gen_raw) %>%
+      dplyr::slice_head(n = 1) %>%
+      dplyr::ungroup()
+    ge_mat <- ge_mat %>%
+      dplyr::left_join(name_lu, by = "gen_raw") %>%
+      dplyr::mutate(
+        gen = ifelse(!is.na(name) & name != "" & name != gen_raw,
+                      paste0(gen_raw, "<", name),
+                      gen_raw)
+      ) %>%
+      dplyr::select(env, gen, yield)
+  } else {
+    ge_mat <- ge_mat %>% dplyr::rename(gen = gen_raw)
+  }
+
   ge_mat$yield <- as.numeric(as.character(ge_mat$yield))
   ge_mat$env   <- as.factor(ge_mat$env)
   ge_mat$gen   <- as.factor(ge_mat$gen)
@@ -173,9 +195,31 @@ analyze_gge <- function(df, trial_info) {
       sd_data$Mean_Yield >= my & sd_data$Stability >  ms ~ "高产不稳",
       sd_data$Mean_Yield <  my & sd_data$Stability <= ms ~ "低产稳定",
       TRUE ~ "低产不稳")
+    # 稳定/不稳定表：拆分组合标签为 stageid + name
     result$stable_genotypes <- sd_data %>%
       dplyr::filter(Category == "高产稳定") %>%
       dplyr::arrange(dplyr::desc(Mean_Yield))
+    result$unstable_genotypes <- sd_data %>%
+      dplyr::filter(Category == "高产不稳") %>%
+      dplyr::arrange(dplyr::desc(Mean_Yield))
+
+    # 不在这里 add name——已在 gen 标签中自带 "stageid<name"
+    # 如需表格拆分两列，在此 split
+    for (key in c("stable_genotypes", "unstable_genotypes")) {
+      tbl <- result[[key]]
+      if (!is.null(tbl) && nrow(tbl) > 0 && "Genotype" %in% names(tbl)) {
+        has_pipe <- grepl("<", tbl$Genotype[1], fixed = TRUE)
+        if (any(has_pipe)) {
+          parts <- strsplit(as.character(tbl$Genotype), "<", fixed = TRUE)
+          tbl$stageid <- vapply(parts, `[`, character(1), 1L)
+          tbl$name    <- vapply(parts, function(x) if(length(x)>1) x[2] else "", character(1))
+          cols_keep <- setdiff(names(tbl), "Genotype")  # stageid+name 已取代复合标签
+          tbl <- tbl[, cols_keep, drop = FALSE]
+          # 把 stageid, name 提到最前面
+          result[[key]] <- tbl[, c("stageid","name", setdiff(names(tbl), c("stageid","name"))), drop = FALSE]
+        }
+      }
+    }
 
     step <- "stability_plot"
     result$stability_scatter <- ggplot2::ggplot(sd_data,
@@ -185,6 +229,8 @@ analyze_gge <- function(df, trial_info) {
       ggplot2::geom_point(alpha = 0.7, size = 3) +
       ggrepel::geom_text_repel(data = dplyr::filter(sd_data, Category == "高产稳定"),
         ggplot2::aes(label = Genotype), size = 3.5, max.overlaps = 15) +
+      ggrepel::geom_text_repel(data = dplyr::filter(sd_data, Category == "高产不稳"),
+        ggplot2::aes(label = Genotype), size = 3.5, max.overlaps = 15, color = "#FF8C00") +
       ggplot2::scale_color_manual(values = c("高产稳定" = "#2E8B57", "高产不稳" = "#FF8C00",
         "低产稳定" = "#1E90FF", "低产不稳" = "#DC143C")) +
       ggplot2::labs(title = "稳定性 x 产量", x = "平均产量", y = "SD(越小越稳定)") +
@@ -246,21 +292,32 @@ analyze_gge <- function(df, trial_info) {
 # 跨地点排名
 analyze_cross_site_ranking <- function(df, trial_info) {
   if (!trial_info$is_multi_site || !"MuChan" %in% colnames(df)) return(NULL)
-  gen_col <- if ("stageid" %in% colnames(df)) "stageid" else "name"
-  if (!gen_col %in% colnames(df)) return(NULL)
 
   df$Mun <- safe_numeric(df$MuChan)
-  cs <- df %>%
-    dplyr::filter(!is.na(.data[[gen_col]]) & nchar(as.character(.data[[gen_col]])) > 0,
-      !is.na(place) & nchar(as.character(place)) > 0, !is.na(Mun)) %>%
-    dplyr::group_by(.data[[gen_col]], place) %>%
-    dplyr::summarise(v = mean(Mun, na.rm = TRUE), .groups = "drop") %>%
-    tidyr::pivot_wider(id_cols = dplyr::all_of(gen_col), names_from = place, values_from = v)
 
-  vc <- setdiff(colnames(cs), gen_col)
+  # 确定分组列：优先用 stageid + name，fallback 单独用
+  has_stageid <- "stageid" %in% colnames(df)
+  has_name    <- "name" %in% colnames(df)
+  group_cols  <- if (has_stageid && has_name) c("stageid", "name")
+                 else if (has_stageid) "stageid"
+                 else if (has_name) "name"
+                 else return(NULL)
+
+  df %>%
+    dplyr::filter(
+      !is.na(Mun),
+      !is.na(place) & nchar(as.character(place)) > 0,
+      dplyr::across(dplyr::all_of(group_cols), ~ !is.na(.x) & nchar(as.character(.x)) > 0)
+    ) %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(c(group_cols, "place")))) %>%
+    dplyr::summarise(v = mean(Mun, na.rm = TRUE), .groups = "drop") %>%
+    tidyr::pivot_wider(id_cols = dplyr::all_of(group_cols), names_from = place, values_from = v) -> cs
+
+  vc <- setdiff(colnames(cs), group_cols)
   if (length(vc) > 0) {
     cs$各点平均 <- rowMeans(cs[, vc, drop = FALSE], na.rm = TRUE)
-    cs <- cs %>% dplyr::mutate(排名 = rank(-各点平均, ties.method = "min")) %>%
+    cs <- cs %>%
+      dplyr::mutate(排名 = rank(-各点平均, ties.method = "min")) %>%
       dplyr::arrange(排名) %>%
       dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ round(.x, 1)))
   }

@@ -1,12 +1,11 @@
 # ==============================================================================
 # 质量性状分布图
-# 从参考脚本 00-main_function.R 的 plot_single_trait_distribution() 移植
 # ==============================================================================
 
 #' 质量性状分布分析
 #'
 #' @param df 数据框（拼音列名）
-#' @return list(plots = list(hua_se=ggplot, ye_xing=ggplot, ...))
+#' @return list(plots = list(花色=ggplot, 叶形=ggplot, ...))
 #' @export
 analyze_quality_traits <- function(df) {
   rdf <- adapt_to_reference(df)
@@ -60,4 +59,26 @@ plot_single_trait <- function(rdf, column) {
       legend.position = "none"
     ) +
     ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.15)))
+}
+
+#' 分地点质量性状分布
+#' @param df 全量数据框
+#' @param trial_info 试验信息
+#' @return list(site_plots = list(site = list(花色=ggplot,...)), sites=地点向量)
+analyze_quality_traits_by_site <- function(df, trial_info) {
+  if (!trial_info$is_multi_site) {
+    plots <- analyze_quality_traits(df)$plots
+    return(list(site_plots = list("default" = plots), sites = "default"))
+  }
+
+  site_plots <- list()
+  for (site in trial_info$places) {
+    sd <- df[df$place == site, , drop = FALSE]
+    if (nrow(sd) > 0) {
+      res <- analyze_quality_traits(sd)
+      if (length(res$plots) > 0) site_plots[[site]] <- res$plots
+    }
+  }
+
+  list(site_plots = site_plots, sites = names(site_plots))
 }

@@ -553,19 +553,43 @@ yield_test_server <- function(id) {
 
     observeEvent(input$btn_view_analyze, {
       req(rv$view_data)
-      showNotification("正在分析...", type = "message", duration = 2)
-      rv$analysis_result <- tryCatch({
-        run_analysis(rv$view_data, "yield_test")
-      }, error = function(e) {
-        showNotification(paste("分析失败:", e$message), type = "error", duration = 5)
-        NULL
-      })
+      df <- rv$view_data
+      n_rows <- nrow(df)
+      n_sites <- if("place" %in% names(df)) length(unique(df$place)) else 1
 
+      # 先弹出加载动画
       showModal(modalDialog(
-        title = div(icon("chart-bar"), "产比数据分析"),
-        size = "xl", easyClose = TRUE, footer = modalButton("关闭"),
-        uiOutput(ns("analysis_modal_body"))
-      ))
+        div(class="text-center p-5",
+          tags$div(class="spinner-border text-primary mb-3", role="status",
+            style="width:4rem;height:4rem;",
+            tags$span(class="visually-hidden", "分析中...")),
+          h5("正在执行分析管道..."),
+          p(class="text-muted", sprintf("%d 行, %d 地点", n_rows, n_sites)),
+          p(class="text-muted small", "产量统计 · 分布图 · 品种筛选 · GGE双标图 · 亲本分析\n请耐心等待，分析完成后自动弹出结果")
+        ),
+        title = NULL, size = "m", easyClose = FALSE, footer = NULL))
+
+      # 延迟执行分析
+      shinyjs::delay(100, {
+        rv$analysis_result <- tryCatch({
+          run_analysis(df, "yield_test")
+        }, error = function(e) {
+          showNotification(paste("分析失败:", e$message), type = "error", duration = 5)
+          NULL
+        })
+
+        if (is.null(rv$analysis_result)) {
+          removeModal()
+          return()
+        }
+
+        # 替换为结果弹窗
+        removeModal()
+        showModal(modalDialog(
+          title = div(icon("chart-bar"), "产比数据分析"),
+          size = "xl", easyClose = TRUE, footer = modalButton("关闭"),
+          uiOutput(ns("analysis_modal_body"))))
+      })
     })
 
     output$analysis_modal_body <- renderUI({
@@ -693,13 +717,42 @@ yield_test_server <- function(id) {
       # === Quality Tab ===
       qt_nms <- grep("^quality_", names(result$plots), value = TRUE)
       if (length(qt_nms) > 0) {
-        tabs$quality <- tabPanel("性状分布", icon = icon("chart-pie"),
-          div(class = "p-3", tags$h5("质量性状分布"),
-            do.call(fluidRow, lapply(qt_nms, function(nm) {
-              column(6, renderPlot({ result$plots[[nm]] }, height = 300))
-            }))
-          )
-        )
+        # 获取地点列表
+        qt_sites <- names(result$per_site_quality)
+        if (is.null(qt_sites) || length(qt_sites) == 0) {
+          # 无分地点数据，直接用qt_nms
+          tabs$quality <- tabPanel("性状分布", icon = icon("chart-pie"),
+            div(class = "p-3", tags$h5("质量性状分布"),
+              do.call(fluidRow, lapply(qt_nms, function(nm) {
+                column(6, renderPlot({ result$plots[[nm]] }, height = 300))
+              }))))
+        } else {
+          tabs$quality <- tabPanel("性状分布", icon = icon("chart-pie"),
+            div(class = "p-3",
+              fluidRow(
+                column(4, selectInput(ns("quality_site_select"), "选择地点",
+                  choices = c("全部", qt_sites),
+                  selected = if ("安徽宿州" %in% qt_sites) "安徽宿州" else "全部",
+                  width = "100%"))),
+              uiOutput(ns("quality_plots_ui"))))
+
+          output$quality_plots_ui <- renderUI({
+            req(input$quality_site_select)
+            if (input$quality_site_select == "全部") {
+              do.call(fluidRow, lapply(qt_nms, function(nm) {
+                column(6, renderPlot({ result$plots[[nm]] }, height = 300))
+              }))
+            } else {
+              site <- input$quality_site_select
+              site_nms <- names(result$per_site_quality[[site]])
+              if (length(site_nms) > 0)
+                do.call(fluidRow, lapply(site_nms, function(nm) {
+                  column(6, renderPlot({ result$per_site_quality[[site]][[nm]] }, height = 300))
+                }))
+              else div(class="text-muted p-3", "该地点无质量性状数据")
+            }
+          })
+        }
       }
 
       # === Screening Tab ===
@@ -770,6 +823,11 @@ yield_test_server <- function(id) {
             if (!is.null(result$tables$gge_stable) && nrow(result$tables$gge_stable) > 0) tagList(
               tags$hr(), tags$h5("高产稳定基因型"),
               renderDataTable({DT::datatable(result$tables$gge_stable,
+                options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")})
+            ),
+            if (!is.null(result$tables$gge_unstable) && nrow(result$tables$gge_unstable) > 0) tagList(
+              tags$hr(), tags$h5("高产不稳基因型（需关注）"),
+              renderDataTable({DT::datatable(result$tables$gge_unstable,
                 options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")})
             )
           )

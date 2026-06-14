@@ -62,6 +62,7 @@ run_analysis <- function(df, module_type = c("yield_test", "population", "line_s
     trait_available = trait_available$available,
     tables = result$tables, plots = result$plots,
     per_site_plots = result$per_site_plots,
+    per_site_quality = result$per_site_quality,
     messages = c(messages, result$messages),
     capabilities = get_analysis_capabilities(trial_info, has_traits))
 }
@@ -106,7 +107,8 @@ compute_derived_yield_columns <- function(df) {
 run_yield_test_analysis <- function(df, trial_info, has_traits) {
   tables  <- list()
   plots   <- list()
-  per_site_plots <- NULL
+  per_site_plots   <- NULL
+  per_site_quality <- NULL
   messages <- character()
 
   tables$overview <- build_yield_overview_table(df)
@@ -191,6 +193,7 @@ run_yield_test_analysis <- function(df, trial_info, has_traits) {
           plots$gge_heatmap   <- gge$heatmap
           plots$gge_ranking   <- gge$ranking
           tables$gge_stable   <- gge$stable_genotypes
+          tables$gge_unstable <- gge$unstable_genotypes
           tables$gge_env      <- gge$env_summary
         }
       }
@@ -206,10 +209,20 @@ run_yield_test_analysis <- function(df, trial_info, has_traits) {
       if (!is.null(ps$per_site_ck_mean))        tables$per_site_ck_mean        <- ps$per_site_ck_mean
       if (!is.null(ps$per_site_plots))          per_site_plots <- ps$per_site_plots
     }
+
+    # 分地点质量性状分布
+    if (!is.null(trial_info) && isTRUE(trial_info$is_multi_site)) {
+      qs <- tryCatch(analyze_quality_traits_by_site(df, trial_info), error = function(e) {
+        messages <<- c(messages, paste("分地点质量性状分析失败:", e$message)); NULL })
+      if (!is.null(qs) && length(qs$site_plots) > 0) {
+        per_site_quality <- qs$site_plots
+      }
+    }
   }
 
   tables$export_data <- df
-  list(tables = tables, plots = plots, per_site_plots = per_site_plots, messages = messages)
+  list(tables = tables, plots = plots, per_site_plots = per_site_plots,
+       per_site_quality = per_site_quality, messages = messages)
 }
 
 # ==============================================================================

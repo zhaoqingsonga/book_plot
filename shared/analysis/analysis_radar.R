@@ -19,7 +19,7 @@ plot_radar_top <- function(df, top_n = 5) {
   # 筛选高产品种
   if (!"MuChan" %in% colnames(df)) return(NULL)
 
-  radar_cols <- intersect(c("name", "MuChan", "JiaoLinJinDuiZhaoZengChan",
+  radar_cols <- intersect(c("stageid", "name", "MuChan", "JiaoLinJinDuiZhaoZengChan",
     "ShengYuQi", "ZhuGao", "BaiLiZhong"), colnames(df))
 
   radar_data <- df %>%
@@ -29,6 +29,17 @@ plot_radar_top <- function(df, top_n = 5) {
     dplyr::slice_head(n = top_n)
 
   if (nrow(radar_data) < 1) return(NULL)
+
+  # 构建显示标签：stageid<name
+  display_names <- radar_data$name
+  if ("stageid" %in% colnames(radar_data)) {
+    display_names <- ifelse(
+      !is.na(radar_data$stageid) & radar_data$stageid != "" &
+        radar_data$stageid != radar_data$name,
+      paste0(radar_data$stageid, "<", radar_data$name),
+      radar_data$name
+    )
+  }
 
   # 指标的显示名和单位
   indicator_info <- list(
@@ -60,7 +71,7 @@ plot_radar_top <- function(df, top_n = 5) {
 
   fmsb_data <- rbind(max_vals, min_vals,
     norm_data[, avail_indicators, drop = FALSE])
-  rownames(fmsb_data) <- c("最大值", "最小值", as.character(norm_data$name))
+  rownames(fmsb_data) <- c("最大值", "最小值", display_names)
 
   # 构建指标标签（含范围）
   index_labels <- sapply(avail_indicators, function(idx) {
@@ -75,6 +86,6 @@ plot_radar_top <- function(df, top_n = 5) {
     data   = fmsb_data,
     labels = index_labels,
     top_n  = top_n,
-    names  = as.character(norm_data$name)
+    names  = display_names
   )
 }

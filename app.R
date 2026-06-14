@@ -17,6 +17,10 @@ library(ggplot2)
 library(soyplant)
 library(DBI)
 library(RSQLite)
+library(corrplot)
+library(fmsb)
+library(ggrepel)
+library(RColorBrewer)
 
 # 加载辅助函数
 source("shared/helpers.R")
@@ -30,8 +34,17 @@ source("shared/mod_yield_test.R")
 source("shared/mod_settings.R")
 source("shared/mod_analysis.R")
 
+# 加载分析功能
+source("shared/mod_analysis.R")
+
 # 加载E智导入功能
 source("shared/import_traits.R")
+
+# 加载区域试验导入功能
+source("shared/db_other_trials.R")
+source("shared/import_regional.R")
+source("shared/mod_regional_import.R")
+source("shared/mod_other_analysis.R")
 
 # 加载designplot模块
 source("shared/designplot/constants.R")
@@ -103,6 +116,13 @@ ui <- navbarPage(
     "E智导入",
     icon = icon("upload"),
     settings_ui("settings_mod")
+  ),
+
+  # === 7. 其它试验 ===
+  tabPanel(
+    "其它试验",
+    icon = icon("file-import"),
+    regional_import_ui("regional_import")
   ),
 
   # === 关于 ===
@@ -212,6 +232,7 @@ server <- function(input, output, session) {
   line_selection_server("line_mod")
   yield_test_server("yield_mod")
   settings_server("settings_mod")
+  regional_import_server("regional_import")
   buildDesignplotServer(input, output, session)
 
   # 中转：mod_experiments 导入成功后向 designplot 发送的 refresh 消息，

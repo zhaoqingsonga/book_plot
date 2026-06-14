@@ -561,18 +561,35 @@ line_selection_server <- function(id) {
 
     observeEvent(input$btn_view_analyze, {
       req(rv$view_data)
-      showNotification("正在分析...", type = "message", duration = 2)
-      rv$analysis_result <- tryCatch({
-        run_analysis(rv$view_data, "line_selection")
-      }, error = function(e) {
-        showNotification(paste("分析失败:", e$message), type = "error", duration = 5)
-        NULL
-      })
+      df <- rv$view_data
+
       showModal(modalDialog(
-        title = div(icon("leaf"), "株行数据分析"),
-        size = "xl", easyClose = TRUE, footer = modalButton("关闭"),
-        uiOutput(ns("analysis_modal_body"))
-      ))
+        div(class="text-center p-5",
+          tags$div(class="spinner-border text-primary mb-3", role="status",
+            style="width:4rem;height:4rem;",
+            tags$span(class="visually-hidden", "分析中...")),
+          h5("正在执行分析管道..."),
+          p(class="text-muted", sprintf("%d 行", nrow(df))),
+          p(class="text-muted small", "选择概览 · 分布统计 · 后代行数 · 形态统计\n请耐心等待，分析完成后自动弹出结果")
+        ),
+        title = NULL, size = "m", easyClose = FALSE, footer = NULL))
+
+      shinyjs::delay(100, {
+        rv$analysis_result <- tryCatch({
+          run_analysis(df, "line_selection")
+        }, error = function(e) {
+          showNotification(paste("分析失败:", e$message), type = "error", duration = 5)
+          NULL
+        })
+
+        if (is.null(rv$analysis_result)) { removeModal(); return() }
+
+        removeModal()
+        showModal(modalDialog(
+          title = div(icon("leaf"), "株行数据分析"),
+          size = "xl", easyClose = TRUE, footer = modalButton("关闭"),
+          uiOutput(ns("analysis_modal_body"))))
+      })
     })
 
     output$analysis_modal_body <- renderUI({

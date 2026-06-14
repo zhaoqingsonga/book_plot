@@ -466,6 +466,13 @@ build_report_gge <- function(result) {
     ))
   }
 
+  if (!is.null(result$tables$gge_unstable) && nrow(result$tables$gge_unstable) > 0) {
+    children <- c(children, list(
+      htmltools::tags$h3("6.6 高产不稳基因型（需关注）"),
+      df_to_html_table(result$tables$gge_unstable, 30)
+    ))
+  }
+
   htmltools::tags$div(class = "report-section", children)
 }
 
