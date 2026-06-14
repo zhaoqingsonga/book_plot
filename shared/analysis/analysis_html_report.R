@@ -489,6 +489,28 @@ build_report_cross_site <- function(result) {
   )
 }
 
+#' 产量生育期节
+build_report_yield_growth <- function(result) {
+  yg_plots <- result$plots$gge_yield_growth
+  if (is.null(yg_plots) || length(yg_plots) == 0) return(NULL)
+
+  children <- list(htmltools::tags$h2("八、产量生育期"))
+
+  stage_names <- names(yg_plots)
+  for (i in seq_along(stage_names)) {
+    sn <- stage_names[i]
+    plot <- yg_plots[[sn]]
+    if (!is.null(plot)) {
+      children <- c(children, list(
+        htmltools::tags$h3(paste0("8.", i, " ", sn)),
+        ggplot_to_img(plot, 800, 500)
+      ))
+    }
+  }
+
+  htmltools::tags$div(class = "report-section", children)
+}
+
 #' 群体分析专题节
 build_report_population <- function(result) {
   children <- list(htmltools::tags$h2("二、群体分析"))
@@ -606,7 +628,8 @@ build_html_report <- function(result, output_path) {
       list(build_report_screening(result)),
       list(build_report_parent(result)),
       list(build_report_gge(result)),
-      list(build_report_cross_site(result))
+      list(build_report_cross_site(result)),
+      list(build_report_yield_growth(result))
     )
   } else if (result$type == "population") {
     sections <- c(sections, list(build_report_population(result)))
@@ -712,6 +735,7 @@ build_markdown_report <- function(result, output_path, chart_dir = "图表", tab
   br  <- function() lines <<- c(lines, "")
   ti <- result$trial_info; caps <- result$capabilities
 
+  # ---- 头部 ----
   add("# 田间试验分析报告"); br()
   add(sprintf("**生成时间**: %s | **试验类型**: %s — %s",
     format(Sys.time(), "%Y-%m-%d %H:%M:%S"), ti$label, ti$desc)); br()
@@ -723,69 +747,147 @@ build_markdown_report <- function(result, output_path, chart_dir = "图表", tab
     add("## 提示信息")
     for (m in result$messages) add(sprintf("- %s", m)); br() }
 
-  if (!is.null(result$tables$yield_stats)) {
-    add("## 产量概览")
-    for (nm in c("yield_stats","per_site_yield_stats","cross_location_avg","yield_ranking")) {
-      if (!is.null(result$tables[[nm]]) && is.data.frame(result$tables[[nm]]) && nrow(result$tables[[nm]]) > 0) {
-        add(sprintf("### %s", c(yield_stats="产量核心统计",per_site_yield_stats="分地点产量统计",cross_location_avg="各地点的平均",yield_ranking="产量排名")[nm])); br()
-        add(md_table(if(nrow(result$tables[[nm]])>25) head(result$tables[[nm]],25) else result$tables[[nm]])); br()
+  # =====================================================================
+  # 产比试验
+  # =====================================================================
+  if (result$type == "yield_test") {
+    if (!is.null(result$tables$yield_stats)) {
+      add("## 产量概览")
+      table_labels <- c(yield_stats="产量核心统计",per_site_yield_stats="分地点产量统计",
+        per_site_growth_stats="分地点生育期统计",per_site_increase_stats="分地点增产统计",
+        cross_location_avg="各地点的平均",yield_ranking="产量排名")
+      for (nm in names(table_labels)) {
+        if (!is.null(result$tables[[nm]]) && is.data.frame(result$tables[[nm]]) && nrow(result$tables[[nm]]) > 0) {
+          add(sprintf("### %s", table_labels[nm])); br()
+          add(md_table(if(nrow(result$tables[[nm]])>25) head(result$tables[[nm]],25) else result$tables[[nm]])); br()
+        }
       }
-    }
-    for (key in c("yield_dist","yield_grade","increase_dist","growth_dist",
-      "scatter_growth","scatter_height","scatter_grain","comparison","radar")) {
-      if (!is.null(result$plots[[key]])) {
-        nm <- c(yield_dist="亩产分布",yield_grade="产量等级分布",increase_dist="增产分布",
-          growth_dist="生育期分布",scatter_growth="生育期vs产量",scatter_height="株高vs产量",
-          scatter_grain="百粒重vs产量",comparison="筛选前后性状对比",radar="雷达图")[key]
-        add(sprintf("![%s](%s/%s.png)", nm, chart_dir, nm)); br()
+      plot_labels <- c(yield_dist="亩产分布",yield_grade="产量等级分布",increase_dist="增产分布",
+        growth_dist="生育期分布",scatter_growth="生育期vs产量",scatter_height="株高vs产量",
+        scatter_grain="百粒重vs产量",comparison="筛选前后性状对比",radar="雷达图")
+      for (key in names(plot_labels)) {
+        if (!is.null(result$plots[[key]])) {
+          add(sprintf("![%s](%s/%s.png)", plot_labels[key], chart_dir, plot_labels[key])); br()
+        }
       }
-    }
-    if (!is.null(result$per_site_plots)) {
-      ptype_labels <- c(yield_dist="亩产分布",yield_grade="产量等级分布",increase_dist="增产分布",growth_dist="生育期分布")
-      for (ptype in names(ptype_labels)) {
-        for (loc in names(result$per_site_plots[[ptype]])) {
-          plot <- result$per_site_plots[[ptype]][[loc]]
-          if (!is.null(plot)) {
-            fn <- paste0("分地点_", ptype_labels[[ptype]], "_", loc, ".png")
-            add(sprintf("![分地点%s — %s](%s/%s)", ptype_labels[[ptype]], loc, chart_dir, fn)); br()
+      if (!is.null(result$per_site_plots)) {
+        ptype_labels <- c(yield_dist="亩产分布",yield_grade="产量等级分布",increase_dist="增产分布",growth_dist="生育期分布")
+        for (ptype in names(ptype_labels)) {
+          for (loc in names(result$per_site_plots[[ptype]])) {
+            plot <- result$per_site_plots[[ptype]][[loc]]
+            if (!is.null(plot)) {
+              fn <- paste0("分地点_", ptype_labels[[ptype]], "_", loc, ".png")
+              add(sprintf("![分地点%s — %s](%s/%s)", ptype_labels[[ptype]], loc, chart_dir, fn)); br()
+            }
           }
         }
       }
-    }
-    if (!is.null(result$plots$corr_matrix))
-      add(sprintf("![性状相关性](%s/性状相关性矩阵.png)", chart_dir)); br() }
+      if (!is.null(result$plots$corr_matrix))
+        add(sprintf("![性状相关性](%s/性状相关性矩阵.png)", chart_dir)); br() }
 
-  qt_nms <- grep("^quality_", names(result$plots), value = TRUE)
-  if (length(qt_nms) > 0) {
-    add("## 性状分布")
-    for (nm in qt_nms) {
-      label <- gsub("^quality_", "", nm)
-      add(sprintf("![性状分布_%s](%s/性状分布_%s.png)", label, chart_dir, label))
-    }; br() }
+    qt_nms <- grep("^quality_", names(result$plots), value = TRUE)
+    if (length(qt_nms) > 0) {
+      add("## 性状分布")
+      for (nm in qt_nms) {
+        label <- gsub("^quality_", "", nm)
+        add(sprintf("![性状分布_%s](%s/性状分布_%s.png)", label, chart_dir, label))
+      }; br() }
 
-  if (!is.null(result$tables$promoted)) {
-    add("## 品种筛选")
-    add(md_table(head(result$tables$promoted, 25)))
-    if (!is.null(result$tables$description)) { add("### 晋级材料评述"); add(result$tables$description) }; br() }
+    if (!is.null(result$tables$promoted)) {
+      add("## 品种筛选")
+      add("### 晋级材料")
+      add(md_table(head(result$tables$promoted, 25)))
+      if (!is.null(result$tables$eliminated) && nrow(result$tables$eliminated) > 0) {
+        add("### 淘汰材料")
+        add(md_table(head(result$tables$eliminated, 30))); br()
+      }
+      if (!is.null(result$tables$description)) { add("### 晋级材料评述"); add(result$tables$description) }; br() }
 
-  if (!is.null(result$tables$parent_stats)) {
-    add("## 亲本分析")
-    if (!is.null(result$plots$parent_plot)) add(sprintf("![亲本晋级表现](%s/亲本晋级表现.png)", chart_dir))
-    add(md_table(head(result$tables$parent_stats, 20)))
-    add(md_table(head(result$tables$cross_stats, 20))); br() }
+    if (!is.null(result$tables$parent_stats)) {
+      add("## 亲本分析")
+      if (!is.null(result$plots$parent_plot)) add(sprintf("![亲本晋级表现](%s/亲本晋级表现.png)", chart_dir))
+      add(md_table(head(result$tables$parent_stats, 20)))
+      add(md_table(head(result$tables$cross_stats, 20))); br() }
 
-  if (!is.null(result$plots$gge_biplot)) {
-    add("## GGE 分析")
-    for (nm in c("GGE双标图","稳定性vs产量","GxE互作热图","基因型排名"))
-      add(sprintf("![%s](%s/%s.png)", nm, chart_dir, nm))
-    if (!is.null(result$tables$gge_stable) && nrow(result$tables$gge_stable) > 0)
-      { add("### 高产稳定基因型"); add(md_table(result$tables$gge_stable)) }
-    if (!is.null(result$tables$gge_unstable) && nrow(result$tables$gge_unstable) > 0)
-      { add("### 高产不稳基因型"); add(md_table(result$tables$gge_unstable)) }; br() }
+    if (!is.null(result$plots$gge_biplot)) {
+      add("## GGE 分析")
+      for (nm in c("GGE双标图","稳定性vs产量","GxE互作热图","基因型排名"))
+        add(sprintf("![%s](%s/%s.png)", nm, chart_dir, nm))
+      if (!is.null(result$tables$gge_stable) && nrow(result$tables$gge_stable) > 0)
+        { add("### 高产稳定基因型"); add(md_table(result$tables$gge_stable)) }
+      if (!is.null(result$tables$gge_unstable) && nrow(result$tables$gge_unstable) > 0)
+        { add("### 高产不稳基因型"); add(md_table(result$tables$gge_unstable)) }; br() }
 
-  if (!is.null(result$tables$cross_site_ranking)) {
-    add("## 跨地点排名")
-    add(md_table(head(result$tables$cross_site_ranking, 25))); br() }
+    if (!is.null(result$plots$gge_yield_growth) && length(result$plots$gge_yield_growth) > 0) {
+      add("## 产量生育期")
+      for (sn in names(result$plots$gge_yield_growth)) {
+        safe_sn <- gsub("[\\\\/:*?\"<>|() ]", "_", sn)
+        add(sprintf("![产量生育期_%s](%s/产量生育期_%s.png)",
+          safe_sn, chart_dir, safe_sn))
+      }; br() }
+
+    if (!is.null(result$tables$cross_site_ranking)) {
+      add("## 跨地点排名")
+      add(md_table(head(result$tables$cross_site_ranking, 25))); br() }
+
+  # =====================================================================
+  # 群体分析
+  # =====================================================================
+  } else if (result$type == "population") {
+    # 世代分布
+    if (!is.null(result$tables$gen_dist)) {
+      add("## 世代分布")
+      add(md_table(result$tables$gen_dist)); br()
+      if (!is.null(result$plots$gen_dist_chart))
+        add(sprintf("![世代分布](%s/世代分布.png)", chart_dir)); br() }
+
+    # 世代追踪
+    if (!is.null(result$tables$gen_track)) {
+      add("## 世代追踪")
+      add(md_table(result$tables$gen_track)); br()
+      if (!is.null(result$plots$gen_track_chart))
+        add(sprintf("![世代追踪](%s/世代追踪.png)", chart_dir)); br() }
+
+    # 组合排名
+    if (!is.null(result$tables$cross_top)) {
+      add("## 组合排名")
+      add(md_table(result$tables$cross_top)); br()
+      if (!is.null(result$plots$cross_chart))
+        add(sprintf("![组合排名](%s/组合排名.png)", chart_dir)); br() }
+
+    # 性状概览
+    if (!is.null(result$tables$trait_overview) && nrow(result$tables$trait_overview) > 0) {
+      add("## 性状概览")
+      add(md_table(if(nrow(result$tables$trait_overview)>25) head(result$tables$trait_overview,25) else result$tables$trait_overview)); br() }
+
+  # =====================================================================
+  # 株行分析
+  # =====================================================================
+  } else if (result$type == "line_selection") {
+    # 选择概况
+    if (!is.null(result$tables$sele_overview)) {
+      add("## 选择概况")
+      add(md_table(result$tables$sele_overview)); br()
+      if (!is.null(result$plots$sele_dist_chart))
+        add(sprintf("![选择分布](%s/选择分布.png)", chart_dir)); br() }
+
+    # 选择分布
+    if (!is.null(result$tables$sele_dist)) {
+      add("## 选择分布")
+      add(md_table(result$tables$sele_dist)); br() }
+
+    # 优良后代
+    if (!is.null(result$tables$progeny_top)) {
+      add("## 优良后代")
+      add(md_table(result$tables$progeny_top)); br()
+      if (!is.null(result$plots$progeny_chart))
+        add(sprintf("![优良后代](%s/优良后代.png)", chart_dir)); br() }
+
+    # 形态统计
+    if (!is.null(result$tables$morph_stats) && nrow(result$tables$morph_stats) > 0) {
+      add("## 形态统计")
+      add(md_table(if(nrow(result$tables$morph_stats)>25) head(result$tables$morph_stats,25) else result$tables$morph_stats)); br() }
+  }
 
   add("---")
   add(sprintf("*由 田间记录本生成及田间规划 自动生成 ｜ %s*", format(Sys.time(), "%Y-%m-%d %H:%M:%S")))
@@ -842,6 +944,18 @@ build_analysis_zip <- function(result, output_path) {
     if (!is.null(plot) && inherits(plot, "ggplot")) {
       label <- gsub("^quality_", "", nm)
       save_plot_png(plot, file.path(chart_dir, paste0("性状分布_", label, ".png")))
+    }
+  }
+
+  # ---- 产量生育期图 ----
+  if (!is.null(result$plots$gge_yield_growth)) {
+    for (sn in names(result$plots$gge_yield_growth)) {
+      plot <- result$plots$gge_yield_growth[[sn]]
+      if (!is.null(plot) && inherits(plot, "ggplot")) {
+        safe_sn <- gsub("[\\\\/:*?\"<>|() ]", "_", sn)
+        fn <- paste0("产量生育期_", safe_sn, ".png")
+        save_plot_png(plot, file.path(chart_dir, fn))
+      }
     }
   }
 

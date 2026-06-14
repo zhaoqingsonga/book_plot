@@ -14,6 +14,7 @@ source("shared/analysis/analysis_gge.R")
 source("shared/analysis/analysis_population.R")
 source("shared/analysis/analysis_line_selection.R")
 source("shared/analysis/analysis_export.R")
+source("shared/analysis/analysis_yield_growth_chart.R")
 source("shared/analysis/analysis_html_report.R")
 
 # ==============================================================================
@@ -195,6 +196,24 @@ run_yield_test_analysis <- function(df, trial_info, has_traits) {
           tables$gge_stable   <- gge$stable_genotypes
           tables$gge_unstable <- gge$unstable_genotypes
           tables$gge_env      <- gge$env_summary
+
+          # 高产品种产量生育期组合图（高产稳定 + 高产不稳，所有高产品种均出图）
+          high_yield_genotypes <- dplyr::bind_rows(
+            gge$stable_genotypes, gge$unstable_genotypes)
+          if (!is.null(high_yield_genotypes) && nrow(high_yield_genotypes) > 0) {
+            ygc <- tryCatch(
+              generate_yield_growth_chart_shiny(df, high_yield_genotypes),
+              error = function(e) {
+                messages <<- c(messages,
+                  paste("高产品种产量生育期图生成失败:", e$message))
+                NULL
+              }
+            )
+            if (!is.null(ygc)) {
+              plots$gge_yield_growth  <- ygc$plots
+              tables$gge_yield_growth <- ygc$tables
+            }
+          }
         }
       }
     }

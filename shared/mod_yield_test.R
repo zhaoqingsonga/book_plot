@@ -835,6 +835,24 @@ yield_test_server <- function(id) {
         )
       }
 
+      # === 产量生育期 Tab ===
+      if (!is.null(result$plots$gge_yield_growth) && length(result$plots$gge_yield_growth) > 0) {
+        tabs$yield_growth <- tabPanel("产量生育期", icon = icon("chart-line"),
+          div(class = "p-3",
+            lapply(names(result$plots$gge_yield_growth), function(sn) {
+              local({
+                sn_local <- sn
+                tagList(
+                  tags$h5(sn_local),
+                  renderPlot({ result$plots$gge_yield_growth[[sn_local]] }, height = 500),
+                  tags$hr()
+                )
+              })
+            })
+          )
+        )
+      }
+
       # === Cross Site Tab ===
       if (!is.null(result$tables$cross_site_ranking)) {
         tabs$cross_site <- tabPanel("跨地点排名", icon = icon("map-marked-alt"),
