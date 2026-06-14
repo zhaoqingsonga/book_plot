@@ -291,9 +291,13 @@ analyze_gge <- function(df, trial_info) {
 
 # 跨地点排名
 analyze_cross_site_ranking <- function(df, trial_info) {
-  if (!trial_info$is_multi_site || !"MuChan" %in% colnames(df)) return(NULL)
+  # 支持原始列名和适配后列名
+  yield_col <- if ("亩产_kg" %in% colnames(df)) "亩产_kg"
+               else if ("MuChan" %in% colnames(df)) "MuChan"
+               else return(NULL)
+  if (!trial_info$is_multi_site) return(NULL)
 
-  df$Mun <- safe_numeric(df$MuChan)
+  df$Mun <- safe_numeric(df[[yield_col]])
 
   # 确定分组列：优先用 stageid + name，fallback 单独用
   has_stageid <- "stageid" %in% colnames(df)
@@ -303,22 +307,25 @@ analyze_cross_site_ranking <- function(df, trial_info) {
                  else if (has_name) "name"
                  else return(NULL)
 
+  # 过滤无效行（替代 dplyr::across 语法）
+  df <- df %>%
+    dplyr::filter(!is.na(.data$Mun)) %>%
+    dplyr::filter(!is.na(place) & nchar(as.character(place)) > 0)
+  for (gc in group_cols) {
+    df <- df %>% dplyr::filter(!is.na(.data[[gc]]) & nchar(as.character(.data[[gc]])) > 0)
+  }
+
   df %>%
-    dplyr::filter(
-      !is.na(Mun),
-      !is.na(place) & nchar(as.character(place)) > 0,
-      dplyr::across(dplyr::all_of(group_cols), ~ !is.na(.x) & nchar(as.character(.x)) > 0)
-    ) %>%
     dplyr::group_by(dplyr::across(dplyr::all_of(c(group_cols, "place")))) %>%
-    dplyr::summarise(v = mean(Mun, na.rm = TRUE), .groups = "drop") %>%
-    tidyr::pivot_wider(id_cols = dplyr::all_of(group_cols), names_from = place, values_from = v) -> cs
+    dplyr::summarise(v = mean(.data$Mun, na.rm = TRUE), .groups = "drop") %>%
+    tidyr::pivot_wider(id_cols = dplyr::all_of(group_cols), names_from = place, values_from = .data$v) -> cs
 
   vc <- setdiff(colnames(cs), group_cols)
   if (length(vc) > 0) {
     cs$各点平均 <- rowMeans(cs[, vc, drop = FALSE], na.rm = TRUE)
     cs <- cs %>%
-      dplyr::mutate(排名 = rank(-各点平均, ties.method = "min")) %>%
-      dplyr::arrange(排名) %>%
+      dplyr::mutate(排名 = rank(-.data$各点平均, ties.method = "min")) %>%
+      dplyr::arrange(.data$排名) %>%
       dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ round(.x, 1)))
   }
   list(table = cs)

@@ -70,11 +70,19 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
       }
     }
 
-    if (!is.null(result$plots$scatter_growth))
+    scatter_items <- list(
+      list(plot = result$plots$scatter_growth, label = "生育期-产量"),
+      list(plot = result$plots$scatter_height, label = "株高-产量"),
+      list(plot = result$plots$scatter_grain,   label = "百粒重-产量")
+    )
+    valid_scatter <- scatter_items[vapply(scatter_items, function(x) !is.null(x$plot), logical(1))]
+    if (length(valid_scatter) > 0) {
+      cols <- floor(12 / length(valid_scatter))
       yc <- tagList(yc, tags$hr(), tags$h5("性状与产量关系"),
-        fluidRow(column(4, renderPlot({result$plots$scatter_growth}, height=300)),
-                 column(4, renderPlot({result$plots$scatter_height}, height=300)),
-                 column(4, renderPlot({result$plots$scatter_grain}, height=300))))
+        fluidRow(lapply(valid_scatter, function(x)
+          column(cols, tags$div(style="text-align:center;font-weight:bold;font-size:12px;", x$label),
+                 renderPlot({x$plot}, height=300)))))
+    }
     if (!is.null(result$plots$corr_matrix))
       yc <- tagList(yc, tags$hr(), tags$h5("性状相关性"), renderPlot({result$plots$corr_matrix()}, height=420))
     yc <- tagList(yc,
