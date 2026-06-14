@@ -60,7 +60,8 @@ regional_import_ui <- function(id) {
               downloadButton(ns("btn_download_result"), "下载", class="btn-outline-secondary btn-sm"),
               actionButton(ns("btn_delete_batch"), "删除", icon=icon("trash"), class="btn-outline-danger btn-sm")))),
           uiOutput(ns("batch_info")),
-          div(class = "card", div(class = "card-body p-0", DT::dataTableOutput(ns("batch_table")))))
+          div(class = "card", div(class = "card-body p-0", DT::dataTableOutput(ns("batch_table")))),
+          shinyjs::hidden(downloadLink(ns("other_do_export"), "hidden")))
       )))
 }
 
@@ -327,7 +328,15 @@ regional_import_server <- function(id) {
 
       # 延迟一小会儿让 modal 渲染出来，然后跑计算
       shinyjs::delay(100, {
-        analysis <- other_analysis_show_ui(df, tname, ns, input, output)
+        analysis <- tryCatch({
+          other_analysis_show_ui(df, tname, ns, input, output)
+        }, error = function(e) {
+          removeModal()
+          removeNotification(id = "other_analysis_working")
+          showNotification(paste("分析失败:", e$message), type = "error", duration = 10)
+          NULL
+        })
+        if (is.null(analysis)) return()
         rv$other_analysis_result <- analysis$result
 
         # 替换占位弹窗为结果弹窗
@@ -352,38 +361,7 @@ regional_import_server <- function(id) {
 
     rv$other_export_path <- NULL
 
-    observeEvent(input$other_export_btn, {
-      req(rv$other_analysis_result)
-      showModal(modalDialog(
-        div(class="text-center p-5",
-          tags$div(class="spinner-border text-primary mb-3", role="status",
-            style="width:3rem;height:3rem;",
-            tags$span(class="visually-hidden", "打包中...")),
-          h5("正在生成压缩包..."),
-          p(class="text-muted small", "PNG图表 + Excel + HTML + Markdown 报告")
-        ),
-        title = NULL, size = "s", easyClose = FALSE, footer = NULL))
-      shinyjs::delay(100, {
-        tmp <- tempfile(fileext = ".zip")
-        tryCatch({
-          build_analysis_zip(rv$other_analysis_result, tmp)
-          rv$other_export_path <- tmp
-          removeModal()
-          showNotification("压缩包已就绪，正在下载...", type = "message")
-          session$sendCustomMessage("auto_download_when_ready", list(
-            id = ns("other_do_export"),
-            failInputId = ns("other_export_timeout"),
-            maxAttempts = 40,
-            intervalMs = 250
-          ))
-        }, error = function(e) {
-          removeModal()
-          showNotification(paste("打包失败:", e$message), type = "error")
-        })
-      })
-    })
-
-    output$other_do_export <- downloadHandler(
+        output$other_do_export <- downloadHandler(
       filename = function() {
         batch_id <- isolate(input$selected_batch)
         batches <- getBatches()
@@ -405,8 +383,29 @@ regional_import_server <- function(id) {
       })
     outputOptions(output, "other_do_export", suspendWhenHidden = FALSE)
 
-    observeEvent(input$other_export_timeout, {
-      showNotification("压缩包已就绪，请刷新页面后重试下载。", type = "warning", duration = 8)
+    observeEvent(input$other_export_btn, {
+      req(rv$other_analysis_result)
+      showModal(modalDialog(
+        div(class="text-center p-5",
+          tags$div(class="spinner-border text-primary mb-3", role="status",
+            style="width:3rem;height:3rem;",
+            tags$span(class="visually-hidden", "打包中...")),
+          h5("正在生成压缩包..."),
+          p(class="text-muted small", "PNG图表 + Excel + HTML + Markdown 报告")
+        ),
+        title = NULL, size = "s", easyClose = FALSE, footer = NULL))
+      shinyjs::delay(100, {
+        tmp <- tempfile(fileext = ".zip")
+        tryCatch({
+          build_analysis_zip(rv$other_analysis_result, tmp)
+          rv$other_export_path <- tmp
+          removeModal()
+          session$sendCustomMessage("trigger_download", list(id = ns("other_do_export")))
+        }, error = function(e) {
+          removeModal()
+          showNotification(paste("打包失败:", e$message), type = "error")
+        })
+      })
     })
 
     return(reactive(rv$import_log))

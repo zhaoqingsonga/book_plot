@@ -17,7 +17,7 @@ ggplot_to_img <- function(plot, width = 800, height = 500) {
   tmp <- tempfile(fileext = ".png")
   on.exit(unlink(tmp), add = TRUE)
   ggplot2::ggsave(tmp, plot, width = width / 100, height = height / 100,
-    dpi = 100, bg = "white", device = "png")
+    dpi = 100, bg = "white", device = ragg::agg_png)
   src <- png_to_base64(tmp)
   htmltools::tags$div(class = "report-chart",
     htmltools::tags$img(src = src, width = "100%",
@@ -29,7 +29,7 @@ ggplot_to_img <- function(plot, width = 800, height = 500) {
 baseplot_to_img <- function(expr, width = 800, height = 500) {
   tmp <- tempfile(fileext = ".png")
   on.exit(unlink(tmp), add = TRUE)
-  grDevices::png(tmp, width = width, height = height, res = 100, bg = "white")
+  ragg::agg_png(tmp, width = width, height = height, res = 100, bg = "white")
   tryCatch(force(expr), finally = grDevices::dev.off())
   src <- png_to_base64(tmp)
   htmltools::tags$div(class = "report-chart",
@@ -388,11 +388,14 @@ build_report_screening <- function(result) {
     children <- c(children, list(
       htmltools::tags$h3("4.4 优良品种雷达图"),
       baseplot_to_img({
+        n_varieties <- nrow(rd$data) - 2
+        cols <- rainbow(n_varieties)
         fmsb::radarchart(rd$data, axistype = 1,
           title = paste0("Top ", rd$top_n, " 品种综合性能"),
           vlabels = rd$labels, vlcex = 0.8,
-          pcol = rainbow(nrow(rd$data) - 2), plwd = 2,
+          pcol = cols, plwd = 2,
           cglcol = "gray80", cglty = 1, cglwd = 0.8)
+        legend("topright", legend = rd$names, col = cols, lwd = 2, cex = 0.7, bg = "white")
       }, 800, 500)
     ))
   }
@@ -653,7 +656,7 @@ save_plot_png <- function(plot, path, width = 1200, height = 700) {
   if (is.null(plot)) return(FALSE)
   tryCatch({
     ggplot2::ggsave(path, plot, width = width / 100, height = height / 100,
-      dpi = 100, bg = "white", device = "png")
+      dpi = 100, bg = "white", device = ragg::agg_png)
     TRUE
   }, error = function(e) FALSE)
 }
@@ -667,7 +670,7 @@ save_plot_png <- function(plot, path, width = 1200, height = 700) {
 #' @keywords internal
 save_baseplot_png <- function(expr, path, width = 1200, height = 700) {
   tryCatch({
-    grDevices::png(path, width = width, height = height, res = 100, bg = "white")
+    ragg::agg_png(path, width = width, height = height, res = 100, bg = "white")
     force(expr)
     grDevices::dev.off()
     TRUE
@@ -733,8 +736,20 @@ build_markdown_report <- function(result, output_path, chart_dir = "图表", tab
       if (!is.null(result$plots[[key]])) {
         nm <- c(yield_dist="亩产分布",yield_grade="产量等级分布",increase_dist="增产分布",
           growth_dist="生育期分布",scatter_growth="生育期vs产量",scatter_height="株高vs产量",
-          scatter_grain="百粒重vs产量",comparison="筛选前后对比",radar="雷达图")[key]
+          scatter_grain="百粒重vs产量",comparison="筛选前后性状对比",radar="雷达图")[key]
         add(sprintf("![%s](%s/%s.png)", nm, chart_dir, nm)); br()
+      }
+    }
+    if (!is.null(result$per_site_plots)) {
+      ptype_labels <- c(yield_dist="亩产分布",yield_grade="产量等级分布",increase_dist="增产分布",growth_dist="生育期分布")
+      for (ptype in names(ptype_labels)) {
+        for (loc in names(result$per_site_plots[[ptype]])) {
+          plot <- result$per_site_plots[[ptype]][[loc]]
+          if (!is.null(plot)) {
+            fn <- paste0("分地点_", ptype_labels[[ptype]], "_", loc, ".png")
+            add(sprintf("![分地点%s — %s](%s/%s)", ptype_labels[[ptype]], loc, chart_dir, fn)); br()
+          }
+        }
       }
     }
     if (!is.null(result$plots$corr_matrix))
@@ -755,7 +770,7 @@ build_markdown_report <- function(result, output_path, chart_dir = "图表", tab
 
   if (!is.null(result$tables$parent_stats)) {
     add("## 亲本分析")
-    add(sprintf("![亲本晋级表现](%s/亲本晋级表现.png)", chart_dir))
+    if (!is.null(result$plots$parent_plot)) add(sprintf("![亲本晋级表现](%s/亲本晋级表现.png)", chart_dir))
     add(md_table(head(result$tables$parent_stats, 20)))
     add(md_table(head(result$tables$cross_stats, 20))); br() }
 
@@ -853,11 +868,14 @@ build_analysis_zip <- function(result, output_path) {
   if (!is.null(result$plots$radar)) {
     rd <- result$plots$radar
     save_baseplot_png({
+      n_varieties <- nrow(rd$data) - 2
+      cols <- rainbow(n_varieties)
       fmsb::radarchart(rd$data, axistype = 1,
         title = paste0("Top ", rd$top_n, " 品种综合性能"),
         vlabels = rd$labels, vlcex = 0.8,
-        pcol = rainbow(nrow(rd$data) - 2), plwd = 2,
+        pcol = cols, plwd = 2,
         cglcol = "gray80", cglty = 1, cglwd = 0.8)
+      legend("topright", legend = rd$names, col = cols, lwd = 2, cex = 0.7, bg = "white")
     }, file.path(chart_dir, "雷达图.png"))
   }
 
@@ -915,8 +933,8 @@ build_analysis_zip <- function(result, output_path) {
   old_wd <- getwd()
   on.exit(setwd(old_wd), add = TRUE)
   setwd(tmpdir)
-  files_to_zip <- list.files(".", recursive = TRUE, all.files = FALSE)
-  utils::zip(output_path, files_to_zip)
+  top_entries <- list.files(".", all.files = FALSE, no.. = TRUE)
+  zip::zip(output_path, top_entries, mode = "mirror")
   setwd(old_wd)
 
   invisible(output_path)

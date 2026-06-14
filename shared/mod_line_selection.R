@@ -204,7 +204,8 @@ line_selection_ui <- function(id) {
         )
       ),
 
-    )
+    ),
+    shinyjs::hidden(downloadLink(ns("do_export"), "hidden"))
   )
 }
 
@@ -652,9 +653,7 @@ line_selection_server <- function(id) {
 
       tabs$export <- tabPanel("导出", icon = icon("download"),
         div(class = "p-3", tags$h5("导出分析结果"),
-          actionButton(ns("btn_prepare_export"), "点击准备导出...", icon = icon("cog"), class = "btn-primary btn-lg"),
-          br(), br(),
-          uiOutput(ns("export_ready_btn")))
+          actionButton(ns("btn_prepare_export"), "点击准备导出...", icon = icon("cog"), class = "btn-primary btn-lg"))
       )
 
       do.call(tabsetPanel, c(list(id = ns("analysis_tabs")), unname(tabs)))
@@ -678,7 +677,7 @@ line_selection_server <- function(id) {
           build_analysis_zip(rv$analysis_result, tmp)
           rv$export_path <- tmp
           removeModal()
-          showNotification("压缩包已就绪，点击下方按钮下载", type = "message")
+          session$sendCustomMessage("trigger_download", list(id = ns("do_export")))
         }, error = function(e) {
           removeModal()
           showNotification(paste("打包失败:", e$message), type = "error")
@@ -686,12 +685,7 @@ line_selection_server <- function(id) {
       })
     })
 
-    output$export_ready_btn <- renderUI({
-      if (!is.null(rv$export_path))
-        downloadButton(ns("btn_export_zip"), "下载压缩包（PNG+Excel+HTML+MD报告）", class="btn-success btn-lg")
-    })
-
-    output$btn_export_zip <- downloadHandler(
+    output$do_export <- downloadHandler(
       filename = function() {
         exp_name <- getExperimentFilenameLabel(
           records = rv$records,
@@ -705,6 +699,7 @@ line_selection_server <- function(id) {
         file.copy(rv$export_path, file)
       }
     )
+    outputOptions(output, "do_export", suspendWhenHidden = FALSE)
 
     output$view_table <- renderFieldRecordTable(reactive(rv$view_data))
 

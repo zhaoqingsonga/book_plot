@@ -32,8 +32,6 @@ source("shared/mod_line_selection.R")
 source("shared/mod_population.R")
 source("shared/mod_yield_test.R")
 source("shared/mod_settings.R")
-source("shared/mod_analysis.R")
-
 # 加载分析功能
 source("shared/mod_analysis.R")
 

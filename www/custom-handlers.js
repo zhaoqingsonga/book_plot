@@ -35,6 +35,13 @@ $(document).ready(function() {
     }, intervalMs);
   });
 
+  // 直接触发 download handler，无轮询
+  Shiny.addCustomMessageHandler('trigger_download', function(message) {
+    if (!message || !message.id) return;
+    var el = document.getElementById(message.id);
+    if (el) el.click();
+  });
+
   Shiny.addCustomMessageHandler('toggle_delete_btn', function(message) {
     var sel = '[id$="btn_delete_exp"]';
     var btns = document.querySelectorAll(sel);
