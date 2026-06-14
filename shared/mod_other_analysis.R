@@ -186,9 +186,7 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
   # ===== Export =====
   tabs$export <- tabPanel("导出", icon=icon("download"), div(class="p-3",
     tags$h5("导出分析结果"),
-    actionButton(ns("other_export_btn"), "生成下载链接", icon=icon("download"), class="btn-primary btn-lg"),
-    br(), br(),
-    uiOutput(ns("other_export_link"))))
+    actionButton(ns("other_export_btn"), "生成并下载压缩包", icon=icon("download"), class="btn-primary btn-lg")))
 
   list(tabs = tabs, result = result)
 }

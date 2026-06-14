@@ -341,7 +341,7 @@ regional_import_server <- function(id) {
     })
 
     output$btn_download_result <- downloadHandler(
-      filename=function() { b <- getBatches(); i <- b[b$import_batch_id==isolate(input$selected_batch),]; paste0(if(nrow(i)>0)i$trial_name[1]else"export","_",format(Sys.time(),"%Y%m%d"),".xlsx") },
+      filename=function() { b <- getBatches(); i <- b[b$import_batch_id==isolate(input$selected_batch),]; paste0(if(nrow(i)>0) enc2utf8(as.character(i$trial_name[1])) else "export","_",format(Sys.time(),"%Y%m%d"),".xlsx") },
       content=function(file) { df <- getOtherTrialData(input$selected_batch); df <- df[,setdiff(names(df),c("id","import_batch_id","import_time","trial_name","group_label","extra_cols")),drop=FALSE]; for(cn in names(df)) if(is.numeric(df[[cn]])) df[[cn]]<-round(df[[cn]],2); openxlsx::write.xlsx(df, file, rowNames=FALSE) })
 
     observeEvent(input$btn_delete_batch, {
@@ -350,9 +350,6 @@ regional_import_server <- function(id) {
     observeEvent(input$confirm_delete, {
       req(input$selected_batch); tryCatch({ deleteOtherTrialBatch(input$selected_batch); refresh_trigger(runif(1)); removeModal(); showNotification("已删除", type="message") }, error=function(e) showNotification(paste("删除失败:",e$message), type="error")) })
 
-    # 导出 handler — 预生成 zip，再提供下载
-    rv$other_analysis_result <- NULL
-    rv$other_export_ready <- FALSE
     rv$other_export_path <- NULL
 
     observeEvent(input$other_export_btn, {
@@ -371,19 +368,19 @@ regional_import_server <- function(id) {
         tryCatch({
           build_analysis_zip(rv$other_analysis_result, tmp)
           rv$other_export_path <- tmp
-          rv$other_export_ready <- TRUE
           removeModal()
-          showNotification("压缩包已就绪，点击下方按钮下载", type = "message")
+          showNotification("压缩包已就绪，正在下载...", type = "message")
+          session$sendCustomMessage("auto_download_when_ready", list(
+            id = ns("other_do_export"),
+            failInputId = ns("other_export_timeout"),
+            maxAttempts = 40,
+            intervalMs = 250
+          ))
         }, error = function(e) {
           removeModal()
           showNotification(paste("打包失败:", e$message), type = "error")
         })
       })
-    })
-
-    output$other_export_link <- renderUI({
-      if (isTRUE(rv$other_export_ready))
-        downloadButton(ns("other_do_export"), "下载压缩包（PNG+Excel+HTML+MD报告）", class="btn-success")
     })
 
     output$other_do_export <- downloadHandler(
@@ -406,6 +403,11 @@ regional_import_server <- function(id) {
         req(rv$other_export_path)
         file.copy(rv$other_export_path, file)
       })
+    outputOptions(output, "other_do_export", suspendWhenHidden = FALSE)
+
+    observeEvent(input$other_export_timeout, {
+      showNotification("压缩包已就绪，请刷新页面后重试下载。", type = "warning", duration = 8)
+    })
 
     return(reactive(rv$import_log))
   })
