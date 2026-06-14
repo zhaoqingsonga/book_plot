@@ -31,6 +31,11 @@ is_ck_variety <- function(x) {
   grepl("CK|对照|check", x, ignore.case = TRUE)
 }
 
+# 判断字符向量中的值是否为空（包括 R 的 NA 和字符串 "NA"）
+is_empty_str <- function(x) {
+  is.na(x) | is.null(x) | as.character(x) == "NA" | as.character(x) == "na" | trimws(as.character(x)) == ""
+}
+
 # =============================================================================
 # 列名自动识别
 # =============================================================================
@@ -188,7 +193,7 @@ autoDetectColumns <- function(raw_cols) {
 # 结构检测
 # =============================================================================
 
-detectStructure <- function(raw_df, name_col_orig, place_col_orig) {
+detectStructure <- function(raw_df, name_col_orig, place_col_orig, stageid_col_orig = NULL) {
   name_col <- raw_df[[name_col_orig]]
   place_col <- raw_df[[place_col_orig]]
 
@@ -206,12 +211,50 @@ detectStructure <- function(raw_df, name_col_orig, place_col_orig) {
     name_filled <- name_col
   }
 
+  # stageid 合并单元格填充：当 stageid 列存在时，
+  # 跟踪每个品种组（name 首次非 NA 时）对应的 stageid，
+  # 后续 NA stageid 行继承该 stageid（而非被 readxl 展开的下一个合并值覆盖）
+  stageid_filled <- NULL
+  if (!is.null(stageid_col_orig) && stageid_col_orig %in% names(raw_df)) {
+    sid_raw <- raw_df[[stageid_col_orig]]
+    current_stageid <- sid_raw[1]
+    current_variety  <- name_filled[1]
+    stageid_filled <- sid_raw
+    for (i in seq_along(sid_raw)) {
+      var <- name_filled[i]
+      sid <- sid_raw[i]
+      var_empty <- is_empty_str(var)
+      sid_empty <- is_empty_str(sid)
+      if (!var_empty && var != current_variety) {
+        # 品种非空且发生变化（新品种块开始）：更新追踪器
+        # stageid 取自地点行的正确值（品种为 NA 的行）；品种行的 stageid 已被 readxl 污染
+        if (!sid_empty) {
+          current_stageid <- sid
+        }
+        current_variety <- var
+        # 品种行本身也继承当前 stageid（地点行的 stageid 尚未到达时）
+        stageid_filled[i] <- current_stageid
+      } else if (var_empty) {
+        # 品种为 NA → 这是地点行，stageid 来自 readxl 展开（正确值）
+        stageid_filled[i] <- sid
+        if (!sid_empty) {
+          # 更新追踪器为地点行的正确 stageid
+          current_stageid <- sid
+        }
+      } else {
+        # 品种非空且品种没变（罕见）→ 继承当前 stageid
+        stageid_filled[i] <- current_stageid
+      }
+    }
+  }
+
   ck_mask <- is_ck_variety(name_filled)
   summary_mask <- is_summary_site(place_col)
 
   list(
     has_merged_cells = has_merged_cells,
     name_filled      = name_filled,
+    stageid_filled   = stageid_filled,
     ck_mask          = ck_mask,
     summary_mask     = summary_mask
   )
@@ -408,6 +451,14 @@ standardizeOtherTrial <- function(raw_df, mapping, structure, metadata) {
     raw_df[[name_col_orig]] <- structure$name_filled
   }
 
+  # 1.5 stageid 填充（合并单元格展开后，品种切换时的 stageid 需正确继承）
+  if (!is.null(structure$stageid_filled)) {
+    stageid_col_orig <- names(mapping)[mapping == "stageid"][1]
+    if (!is.na(stageid_col_orig) && stageid_col_orig %in% names(raw_df)) {
+      raw_df[[stageid_col_orig]] <- structure$stageid_filled
+    }
+  }
+
   # 2. 剔除汇总行
   place_col_orig <- names(mapping)[mapping == "place"][1]
   raw_df <- raw_df[!structure$summary_mask, , drop = FALSE]
@@ -577,12 +628,13 @@ processRegionalImport <- function(file, sheet = 1, mapping = NULL, metadata = li
   }
 
   # 定位关键列
-  name_orig <- names(mapping)[mapping == "name"][1]
-  place_orig <- names(mapping)[mapping == "place"][1]
+  name_orig   <- names(mapping)[mapping == "name"][1]
+  place_orig  <- names(mapping)[mapping == "place"][1]
+  stageid_orig <- names(mapping)[mapping == "stageid"][1]
   if (is.na(name_orig)) stop("未找到品种列的映射")
   if (is.na(place_orig)) stop("未找到地点列的映射")
 
-  structure <- detectStructure(raw$raw_df, name_orig, place_orig)
+  structure <- detectStructure(raw$raw_df, name_orig, place_orig, stageid_orig)
 
   df <- standardizeOtherTrial(raw$raw_df, mapping, structure, metadata)
   if (is.null(df)) stop("数据为空（可能全部被过滤）")
