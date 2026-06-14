@@ -350,13 +350,62 @@ regional_import_server <- function(id) {
     observeEvent(input$confirm_delete, {
       req(input$selected_batch); tryCatch({ deleteOtherTrialBatch(input$selected_batch); refresh_trigger(runif(1)); removeModal(); showNotification("已删除", type="message") }, error=function(e) showNotification(paste("删除失败:",e$message), type="error")) })
 
-    # 导出 handler
-    rv$other_analysis_result <- NULL; rv$other_analysis_ready <- FALSE
-    observeEvent(input$other_export_btn, { rv$other_analysis_ready <- TRUE; showNotification("下载链接已生成", type="message") })
-    output$other_export_link <- renderUI({ if(isTRUE(rv$other_analysis_ready)) downloadButton(ns("other_do_export"), "下载压缩包（PNG+Excel+HTML报告）", class="btn-success") })
+    # 导出 handler — 预生成 zip，再提供下载
+    rv$other_analysis_result <- NULL
+    rv$other_export_ready <- FALSE
+    rv$other_export_path <- NULL
+
+    observeEvent(input$other_export_btn, {
+      req(rv$other_analysis_result)
+      showModal(modalDialog(
+        div(class="text-center p-5",
+          tags$div(class="spinner-border text-primary mb-3", role="status",
+            style="width:3rem;height:3rem;",
+            tags$span(class="visually-hidden", "打包中...")),
+          h5("正在生成压缩包..."),
+          p(class="text-muted small", "PNG图表 + Excel + HTML + Markdown 报告")
+        ),
+        title = NULL, size = "s", easyClose = FALSE, footer = NULL))
+      shinyjs::delay(100, {
+        tmp <- tempfile(fileext = ".zip")
+        tryCatch({
+          build_analysis_zip(rv$other_analysis_result, tmp)
+          rv$other_export_path <- tmp
+          rv$other_export_ready <- TRUE
+          removeModal()
+          showNotification("压缩包已就绪，点击下方按钮下载", type = "message")
+        }, error = function(e) {
+          removeModal()
+          showNotification(paste("打包失败:", e$message), type = "error")
+        })
+      })
+    })
+
+    output$other_export_link <- renderUI({
+      if (isTRUE(rv$other_export_ready))
+        downloadButton(ns("other_do_export"), "下载压缩包（PNG+Excel+HTML+MD报告）", class="btn-success")
+    })
+
     output$other_do_export <- downloadHandler(
-      filename=function() paste0("其它试验分析_",format(Sys.time(),"%Y%m%d_%H%M%S"),".zip"),
-      content=function(file) { req(rv$other_analysis_result); build_analysis_zip(rv$other_analysis_result, file) })
+      filename = function() {
+        batch_id <- isolate(input$selected_batch)
+        batches <- getBatches()
+        info <- batches[batches$import_batch_id == batch_id, ]
+        exp_name <- if (nrow(info) > 0 && nzchar(trimws(info$trial_name[1]))) {
+          trimws(as.character(info$trial_name[1]))
+        } else {
+          "其它试验"
+        }
+        exp_name <- enc2utf8(exp_name)
+        exp_name <- gsub("[:*?\"<>|]", "_", exp_name)
+        exp_name <- trimws(exp_name)
+        if (!nzchar(exp_name)) exp_name <- "其它试验"
+        paste0("其它试验分析_", exp_name, ".zip")
+      },
+      content = function(file) {
+        req(rv$other_export_path)
+        file.copy(rv$other_export_path, file)
+      })
 
     return(reactive(rv$import_log))
   })

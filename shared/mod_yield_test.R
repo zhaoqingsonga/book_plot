@@ -848,10 +848,43 @@ yield_test_server <- function(id) {
       # === Export Tab ===
       tabs$export <- tabPanel("导出", icon = icon("download"),
         div(class = "p-3", tags$h5("导出分析结果"),
-          downloadButton(ns("btn_export_zip"), "下载压缩包（图表PNG + Excel + HTML报告）", class = "btn-primary btn-lg"))
+          actionButton(ns("btn_prepare_export"), "点击准备导出...", icon = icon("cog"), class = "btn-primary btn-lg"),
+          br(), br(),
+          uiOutput(ns("export_ready_btn")))
       )
 
       do.call(tabsetPanel, c(list(id = ns("analysis_tabs")), unname(tabs)))
+    })
+
+    rv$export_path <- NULL
+
+    observeEvent(input$btn_prepare_export, {
+      req(rv$analysis_result)
+      showModal(modalDialog(
+        div(class="text-center p-5",
+          tags$div(class="spinner-border text-primary mb-3", role="status",
+            style="width:3rem;height:3rem;",
+            tags$span(class="visually-hidden", "打包中...")),
+          h5("正在生成压缩包..."),
+          p(class="text-muted small", "PNG图表 + Excel + HTML + Markdown 报告")),
+        title = NULL, size = "s", easyClose = FALSE, footer = NULL))
+      shinyjs::delay(100, {
+        tmp <- tempfile(fileext = ".zip")
+        tryCatch({
+          build_analysis_zip(rv$analysis_result, tmp)
+          rv$export_path <- tmp
+          removeModal()
+          showNotification("压缩包已就绪，点击下方按钮下载", type = "message")
+        }, error = function(e) {
+          removeModal()
+          showNotification(paste("打包失败:", e$message), type = "error")
+        })
+      })
+    })
+
+    output$export_ready_btn <- renderUI({
+      if (!is.null(rv$export_path))
+        downloadButton(ns("btn_export_zip"), "下载压缩包（PNG + Excel + HTML + MD报告）", class = "btn-success btn-lg")
     })
 
     output$btn_export_zip <- downloadHandler(
@@ -864,8 +897,8 @@ yield_test_server <- function(id) {
         paste0("产比分析_", exp_name, ".zip")
       },
       content = function(file) {
-        req(rv$analysis_result)
-        build_analysis_zip(rv$analysis_result, file)
+        req(rv$export_path)
+        file.copy(rv$export_path, file)
       }
     )
 

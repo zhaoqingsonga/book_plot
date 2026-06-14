@@ -679,10 +679,105 @@ save_baseplot_png <- function(expr, path, width = 1200, height = 700) {
 
 #' 构建分析结果压缩包
 #'
-#' 包含：HTML 报告、Excel 报告、所有图表 PNG、关键数据 CSV
+#' 包含：Markdown 报告、HTML 报告、Excel 报告、所有图表 PNG、关键数据 CSV
 #'
 #' @param result run_analysis() 的返回值
 #' @param output_path 输出 zip 文件路径
+# ==============================================================================
+# Markdown 分析报告
+# ==============================================================================
+
+md_table <- function(df) {
+  if (!is.data.frame(df) || nrow(df) == 0) return("")
+  hdr <- paste0("| ", paste(names(df), collapse = " | "), " |")
+  sep <- paste0("|", paste(rep("---", ncol(df)), collapse = "|"), "|")
+  rows <- apply(df, 1, function(r) {
+    vals <- sapply(r, function(v) if (is.na(v)) "" else as.character(v))
+    paste0("| ", paste(vals, collapse = " | "), " |")
+  })
+  c(hdr, sep, rows)
+}
+
+build_markdown_report <- function(result, output_path, chart_dir = "图表", table_dir = "数据表") {
+  if (result$type == "error") {
+    writeLines(c("# 分析报告 — 错误", "", result$messages), output_path, useBytes = TRUE)
+    return(invisible())
+  }
+
+  lines <- character()
+  add <- function(...) lines <<- c(lines, paste0(...))
+  br  <- function() lines <<- c(lines, "")
+  ti <- result$trial_info; caps <- result$capabilities
+
+  add("# 田间试验分析报告"); br()
+  add(sprintf("**生成时间**: %s | **试验类型**: %s — %s",
+    format(Sys.time(), "%Y-%m-%d %H:%M:%S"), ti$label, ti$desc)); br()
+
+  if (length(caps$available) > 0) {
+    add("## 可用分析")
+    for (c in caps$available) add(sprintf("- %s", c)); br() }
+  if (length(result$messages) > 0) {
+    add("## 提示信息")
+    for (m in result$messages) add(sprintf("- %s", m)); br() }
+
+  if (!is.null(result$tables$yield_stats)) {
+    add("## 产量概览")
+    for (nm in c("yield_stats","per_site_yield_stats","cross_location_avg","yield_ranking")) {
+      if (!is.null(result$tables[[nm]]) && is.data.frame(result$tables[[nm]]) && nrow(result$tables[[nm]]) > 0) {
+        add(sprintf("### %s", c(yield_stats="产量核心统计",per_site_yield_stats="分地点产量统计",cross_location_avg="各地点的平均",yield_ranking="产量排名")[nm])); br()
+        add(md_table(if(nrow(result$tables[[nm]])>25) head(result$tables[[nm]],25) else result$tables[[nm]])); br()
+      }
+    }
+    for (key in c("yield_dist","yield_grade","increase_dist","growth_dist",
+      "scatter_growth","scatter_height","scatter_grain","comparison","radar")) {
+      if (!is.null(result$plots[[key]])) {
+        nm <- c(yield_dist="亩产分布",yield_grade="产量等级分布",increase_dist="增产分布",
+          growth_dist="生育期分布",scatter_growth="生育期vs产量",scatter_height="株高vs产量",
+          scatter_grain="百粒重vs产量",comparison="筛选前后对比",radar="雷达图")[key]
+        add(sprintf("![%s](%s/%s.png)", nm, chart_dir, nm)); br()
+      }
+    }
+    if (!is.null(result$plots$corr_matrix))
+      add(sprintf("![性状相关性](%s/性状相关性矩阵.png)", chart_dir)); br() }
+
+  qt_nms <- grep("^quality_", names(result$plots), value = TRUE)
+  if (length(qt_nms) > 0) {
+    add("## 性状分布")
+    for (nm in qt_nms) {
+      label <- gsub("^quality_", "", nm)
+      add(sprintf("![性状分布_%s](%s/性状分布_%s.png)", label, chart_dir, label))
+    }; br() }
+
+  if (!is.null(result$tables$promoted)) {
+    add("## 品种筛选")
+    add(md_table(head(result$tables$promoted, 25)))
+    if (!is.null(result$tables$description)) { add("### 晋级材料评述"); add(result$tables$description) }; br() }
+
+  if (!is.null(result$tables$parent_stats)) {
+    add("## 亲本分析")
+    add(sprintf("![亲本晋级表现](%s/亲本晋级表现.png)", chart_dir))
+    add(md_table(head(result$tables$parent_stats, 20)))
+    add(md_table(head(result$tables$cross_stats, 20))); br() }
+
+  if (!is.null(result$plots$gge_biplot)) {
+    add("## GGE 分析")
+    for (nm in c("GGE双标图","稳定性vs产量","GxE互作热图","基因型排名"))
+      add(sprintf("![%s](%s/%s.png)", nm, chart_dir, nm))
+    if (!is.null(result$tables$gge_stable) && nrow(result$tables$gge_stable) > 0)
+      { add("### 高产稳定基因型"); add(md_table(result$tables$gge_stable)) }
+    if (!is.null(result$tables$gge_unstable) && nrow(result$tables$gge_unstable) > 0)
+      { add("### 高产不稳基因型"); add(md_table(result$tables$gge_unstable)) }; br() }
+
+  if (!is.null(result$tables$cross_site_ranking)) {
+    add("## 跨地点排名")
+    add(md_table(head(result$tables$cross_site_ranking, 25))); br() }
+
+  add("---")
+  add(sprintf("*由 田间记录本生成及田间规划 自动生成 ｜ %s*", format(Sys.time(), "%Y-%m-%d %H:%M:%S")))
+  writeLines(lines, output_path, useBytes = TRUE)
+  invisible(output_path)
+}
+
 #' @export
 build_analysis_zip <- function(result, output_path) {
   tmpdir <- file.path(tempdir(), paste0("analysis_", format(Sys.time(), "%Y%m%d%H%M%S")))
@@ -798,6 +893,14 @@ build_analysis_zip <- function(result, output_path) {
     build_analysis_excel(result, xlsx_path)
   }, error = function(e) {
     message("Excel 报告生成失败: ", e$message)
+  })
+
+  # ---- Markdown 报告 ----
+  md_path <- file.path(tmpdir, "分析报告.md")
+  tryCatch({
+    build_markdown_report(result, md_path, "图表", "数据表")
+  }, error = function(e) {
+    message("Markdown 报告生成失败: ", e$message)
   })
 
   # ---- HTML 报告 ----
