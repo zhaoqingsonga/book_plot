@@ -653,7 +653,7 @@ yield_test_server <- function(id) {
             tags$hr(), tags$h5("产量与生育期分布"),
             fluidRow(
               column(6, if (!is.null(result$plots$yield_dist)) renderPlot({ result$plots$yield_dist }, height = 380)),
-              column(6, if (!is.null(result$plots$yield_grade)) renderPlot({ result$plots$yield_grade }, height = 380))
+              column(6, if (!is.null(result$plots$yield_grade_dist)) renderPlot({ result$plots$yield_grade_dist }, height = 380))
             ),
             fluidRow(
               column(6, if (!is.null(result$plots$increase_dist)) renderPlot({ result$plots$increase_dist }, height = 380)),
@@ -688,17 +688,25 @@ yield_test_server <- function(id) {
                 c(list(tags$hr(), tags$h5("分地点产量与生育期分布")), plot_rows)
               }
             },
-            if (!is.null(result$plots$scatter_growth)) tagList(
-              tags$hr(), tags$h5("性状与产量关系"),
-              fluidRow(
-                column(4, renderPlot({ result$plots$scatter_growth }, height = 300)),
-                column(4, renderPlot({ result$plots$scatter_height }, height = 300)),
-                column(4, renderPlot({ result$plots$scatter_grain }, height = 300))
+            {
+              scatter_items <- list(
+                list(plot = result$plots$scatter_growth, label = "生育期-产量"),
+                list(plot = result$plots$scatter_height, label = "株高-产量"),
+                list(plot = result$plots$scatter_grain,   label = "百粒重-产量")
               )
-            ),
+              valid_scatter <- scatter_items[vapply(scatter_items, function(x) !is.null(x$plot), logical(1))]
+              if (length(valid_scatter) > 0) {
+                cols <- floor(12 / length(valid_scatter))
+                tagList(tags$hr(), tags$h5("性状与产量关系"),
+                  fluidRow(lapply(valid_scatter, function(x) {
+                    column(cols, tags$div(style = "text-align:center;font-weight:bold;font-size:12px;", x$label),
+                           renderPlot({x$plot}, height = 300))
+                  })))
+              }
+            },
             if (!is.null(result$plots$corr_matrix)) tagList(
               tags$hr(), tags$h5("性状相关性"),
-              renderPlot({ result$plots$corr_matrix() }, height = 420)
+              renderPlot({ result$plots$corr_matrix }, height = 420)
             ),
             tags$hr(), tags$h5("产量排名"),
             renderDataTable({DT::datatable(result$tables$yield_ranking,

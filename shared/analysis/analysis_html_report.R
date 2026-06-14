@@ -308,7 +308,7 @@ build_report_yield <- function(result) {
   if (!is.null(result$plots$corr_matrix)) {
     children <- c(children, list(
       htmltools::tags$h3(sprintf("2.%d 性状相关性", sub_idx)),
-      baseplot_to_img(result$plots$corr_matrix(), 800, 420)
+      baseplot_to_img(result$plots$corr_matrix, 800, 420)
     ))
     sub_idx <- sub_idx + 1L
   }
@@ -996,7 +996,7 @@ build_analysis_zip <- function(result, output_path) {
   # ---- 相关性矩阵（基础图形） ----
   if (!is.null(result$plots$corr_matrix)) {
     save_baseplot_png({
-      result$plots$corr_matrix()
+      result$plots$corr_matrix
     }, file.path(chart_dir, "性状相关性矩阵.png"))
   }
 

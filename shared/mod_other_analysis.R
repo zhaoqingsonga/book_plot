@@ -49,7 +49,7 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     yc <- tagList(yc,
       tags$hr(), tags$h5("产量与生育期分布"),
       fluidRow(column(6, if(!is.null(result$plots$yield_dist)) renderPlot({result$plots$yield_dist}, height=380)),
-               column(6, if(!is.null(result$plots$yield_grade)) renderPlot({result$plots$yield_grade}, height=380))),
+               column(6, if(!is.null(result$plots$yield_grade_dist)) renderPlot({result$plots$yield_grade_dist}, height=380))),
       fluidRow(column(6, if(!is.null(result$plots$increase_dist)) renderPlot({result$plots$increase_dist}, height=380)),
                column(6, if(!is.null(result$plots$growth_dist)) renderPlot({result$plots$growth_dist}, height=380))))
 
@@ -84,7 +84,7 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
                  renderPlot({x$plot}, height=300)))))
     }
     if (!is.null(result$plots$corr_matrix))
-      yc <- tagList(yc, tags$hr(), tags$h5("性状相关性"), renderPlot({result$plots$corr_matrix()}, height=420))
+      yc <- tagList(yc, tags$hr(), tags$h5("性状相关性"), renderPlot({result$plots$corr_matrix}, height=420))
     yc <- tagList(yc,
       tags$hr(), tags$h5("产量排名"),
       DT::renderDataTable({DT::datatable(result$tables$yield_ranking,
@@ -182,6 +182,16 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
         DT::renderDataTable({DT::datatable(result$tables$gge_unstable,
           options=list(pageLength=10,dom='ftip'), rownames=FALSE, class="compact")}))
     tabs$gge <- tabPanel("GGE分析", icon=icon("globe"), div(class="p-3", gc))
+  }
+
+  # ===== Yield & Growth =====
+  if (!is.null(result$plots$gge_yield_growth) && length(result$plots$gge_yield_growth) > 0) {
+    yg_names <- names(result$plots$gge_yield_growth)
+    yg_plots <- lapply(yg_names, function(nm) {
+      tagList(tags$h5(nm, style="margin-top:20px;"),
+              renderPlot({result$plots$gge_yield_growth[[nm]]}, height=500))
+    })
+    tabs$yield_growth <- tabPanel("产量与生育期", icon=icon("chart-line"), div(class="p-3", yg_plots))
   }
 
   # ===== Cross-site =====

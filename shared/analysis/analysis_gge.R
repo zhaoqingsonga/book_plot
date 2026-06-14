@@ -326,7 +326,11 @@ analyze_cross_site_ranking <- function(df, trial_info) {
     cs <- cs %>%
       dplyr::mutate(排名 = rank(-.data$各点平均, ties.method = "min")) %>%
       dplyr::arrange(.data$排名) %>%
-      dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ round(.x, 1)))
+      { 
+        numeric_cols <- names(which(vapply(.[setdiff(names(.), "排名")], is.numeric, logical(1))))
+        for (col in numeric_cols) .[[col]] <- round(.[[col]], 1)
+        .
+      }
   }
   list(table = cs)
 }

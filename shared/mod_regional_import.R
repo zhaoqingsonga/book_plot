@@ -155,6 +155,8 @@ regional_import_server <- function(id) {
         meta <- list(trial_name=if(nchar(input$trial_name)>0)input$trial_name else"未命名试验", group_label=input$group_label)
         rv$processed <- processRegionalImport(file=input$file_excel$datapath, sheet=input$sheet_name, mapping=rv$user_mapping, metadata=meta)
         add_log(sprintf("完成: %d行, %d地点, %d品种", rv$processed$stats$n_rows, rv$processed$stats$n_sites, rv$processed$stats$n_varieties))
+    if (!is.null(rv$processed$stats$dropped_rows) && rv$processed$stats$dropped_rows > 0)
+      add_log(sprintf("注意: 剔除了 %d 行无效数据（地点或品种为空）", rv$processed$stats$dropped_rows))
         showStep("step3")
       }, error=function(e) { add_log(sprintf("错误: %s", e$message)); showNotification(paste("标准化失败:", e$message), type="error") })
     })

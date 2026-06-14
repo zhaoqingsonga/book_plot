@@ -509,6 +509,9 @@ standardizeOtherTrial <- function(raw_df, mapping, structure, metadata) {
     result[[cn]] <- x
   }
 
+  # 4.6 亩产为0视为无产量数据
+  result$MuChan[!is.na(result$MuChan) & result$MuChan == 0] <- NA_real_
+
   # 日期性状：Excel序列数 → "YYYY-MM-DD"
   date_traits <- c("BoZhongQi","ChuMiaoQi","KaiHuaQi","ChengShuQi","ChengShuQiTianJianPingJia",
                    "ShouHuoQi","ShiHuaQi","ChuShuQi","WanShuQi")
@@ -532,6 +535,15 @@ standardizeOtherTrial <- function(raw_df, mapping, structure, metadata) {
   qt_result <- standardizeQualityTraits(result)
   result <- qt_result$df
   unresolved <- qt_result$unresolved
+
+  # 6.5 剔除必填列为空的行（place / name 为 NOT NULL，且有地点才能分析）
+  before <- nrow(result)
+  result <- result[!is.na(result$place) & nchar(trimws(result$place)) > 0 &
+                   !is.na(result$name)  & nchar(trimws(result$name)) > 0, , drop = FALSE]
+  if (nrow(result) < before) {
+    attr(result, "dropped_empty_rows") <- before - nrow(result)
+  }
+  if (nrow(result) == 0) return(NULL)
 
   # 7. 额外列打包为 JSON
   if (length(extra_pairs) > 0) {
@@ -577,6 +589,9 @@ processRegionalImport <- function(file, sheet = 1, mapping = NULL, metadata = li
 
   unresolved <- attr(df, "unresolved_quality", exact = TRUE)
   attr(df, "unresolved_quality") <- NULL
+  dropped  <- attr(df, "dropped_empty_rows", exact = TRUE)
+  if (is.null(dropped)) dropped <- 0L
+  attr(df, "dropped_empty_rows") <- NULL
 
   n_sites <- length(unique(df$place[!is.na(df$place)]))
   n_varieties <- length(unique(df$name[!is.na(df$name)]))
@@ -588,7 +603,8 @@ processRegionalImport <- function(file, sheet = 1, mapping = NULL, metadata = li
       n_rows       = nrow(df),
       n_sites      = n_sites,
       n_varieties  = n_varieties,
-      has_yield    = !all(is.na(df$MuChan))
+      has_yield    = !all(is.na(df$MuChan)),
+      dropped_rows = dropped
     )
   )
 }

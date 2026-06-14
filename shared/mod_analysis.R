@@ -129,7 +129,7 @@ run_yield_test_analysis <- function(df, trial_info, has_traits) {
     tables$growth_stats   <- yc$growth_stats
     tables$increase_stats <- yc$increase_stats
     plots$yield_dist      <- yc$plots$yield_dist
-    plots$yield_grade     <- yc$plots$yield_grade_dist
+    plots$yield_grade_dist <- yc$plots$yield_grade_dist
     plots$increase_dist   <- yc$plots$increase_dist
     plots$growth_dist     <- yc$plots$growth_dist
     plots$scatter_growth  <- yc$scatter_plots$growth_vs_yield
