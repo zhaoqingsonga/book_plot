@@ -30,14 +30,14 @@ settings_ui <- function(id) {
               ),
 
               # Sheet 选择
-              selectInput(ns("sheet_name"), "选择 Sheet",
+              selectizeInput(ns("sheet_name"), "选择 Sheet",
                 choices = c("template"),
                 selected = "template",
                 width = "100%"
               ),
 
               # 试验类型
-              selectInput(ns("experiment_type"), "试验类型",
+              selectizeInput(ns("experiment_type"), "试验类型",
                 choices = c(
                   "自动检测" = "auto",
                   "群体" = "population",
@@ -137,7 +137,7 @@ settings_server <- function(id) {
         rv$sheet_names <- sheets
 
         # 更新 Sheet 选择
-        updateSelectInput(session, "sheet_name",
+        updateSelectizeInput(session, "sheet_name",
           choices = sheets,
           selected = if ("template" %in% sheets) "template" else sheets[1]
         )
@@ -278,7 +278,7 @@ settings_server <- function(id) {
 
       # 重置文件输入
       shinyjs::reset("file_excel")
-      updateSelectInput(session, "sheet_name", choices = "template", selected = "template")
+      updateSelectizeInput(session, "sheet_name", choices = "template", selected = "template")
 
       # 禁用按钮
       shinyjs::disable("btn_preview")

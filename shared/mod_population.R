@@ -45,7 +45,7 @@ population_ui <- function(id) {
                   placeholder = "未选择文件",
                   width = "100%"
                 ),
-                selectInput(ns("sheet"), "选择工作表", choices = NULL, width = "100%"),
+                selectizeInput(ns("sheet"), "选择工作表", choices = NULL, width = "100%"),
                 div(class = "button-group",
                   actionButton(ns("btn_preview"), "预览", icon = icon("eye"), class = "btn-info"),
                   actionButton(ns("btn_save"), "保存", icon = icon("save"), class = "btn-primary")
@@ -106,7 +106,11 @@ population_ui <- function(id) {
               div(class = "sidebar-panel",
                 # === 试验选择（不折叠）===
                 h5(icon("database"), " 选择试验"),
-                selectInput(ns("select_exp"), "", choices = NULL, width = "100%"),
+                fluidRow(
+                  column(6, selectizeInput(ns("filter_year"), "年份", choices = NULL, width = "100%")),
+                  column(6, textInput(ns("filter_search"), "搜索", placeholder = "输入关键词...", width = "100%"))
+                ),
+                selectizeInput(ns("select_exp"), "", choices = NULL, width = "100%"),
                 p("注：只处理new_rows>0的记录", style = "color: red; font-size: 12px;"),
 
                 # === 折叠面板：种植参数 ===
@@ -197,8 +201,11 @@ population_ui <- function(id) {
                   icon("clipboard-list"), " 田试记录（已生成）"
                 ),
 
-
-                selectInput(ns("view_exp"), "选择试验", choices = NULL, width = "100%"),
+                fluidRow(
+                  column(6, selectizeInput(ns("filter_view_year"), "年份", choices = NULL, width = "100%")),
+                  column(6, textInput(ns("filter_view_search"), "搜索", placeholder = "输入关键词...", width = "100%"))
+                ),
+                selectizeInput(ns("view_exp"), "选择试验", choices = NULL, width = "100%"),
                 div(class = "button-group",
                   actionButton(ns("btn_view_analyze"), "分析", icon = icon("chart-bar"), class = "btn-info btn-sm"),
                   downloadButton(ns("btn_view_download"), "下载", class = "btn-success btn-sm"),
@@ -244,7 +251,7 @@ population_server <- function(id) {
         sheets <- getSheetNames(input$file$datapath)
         # 默认选择 "planting" 工作表（如果存在）
         selected <- if ("planting" %in% sheets) "planting" else sheets[1]
-        updateSelectInput(session, "sheet", choices = sheets, selected = selected)
+        updateSelectizeInput(session, "sheet", choices = sheets, selected = selected)
 
         # 自动提取文件名作为试验名称（去掉扩展名）
         file_name <- input$file$name
@@ -319,7 +326,7 @@ population_server <- function(id) {
         fluidRow(
           column(4, p(strong(label))),
           column(8,
-            selectInput(ns(paste0("map_", field)),
+            selectizeInput(ns(paste0("map_", field)),
               label = NULL,
               choices = rv$all_columns,
               selected = rv$all_columns[1],
@@ -414,10 +421,12 @@ population_server <- function(id) {
 
         # 刷新记录列表
         rv$records <- listPopulationRecords(db_path = db_path)
-        updateSelectInput(
+        updateSelectizeInput(
           session,
           "select_exp",
-          choices = buildGeneratedChoices(rv$records),
+          choices = buildGeneratedChoices(rv$records,
+            year_filter = input$filter_year,
+            search_filter = input$filter_search),
           selected = rv$selected_exp
         )
 
@@ -520,11 +529,17 @@ population_server <- function(id) {
     observe({
       records <- listPopulationRecords(db_path = db_path)
       generated <- records[records$has_generated == 1, ]
+      if (!is.null(input$filter_view_year) && nzchar(input$filter_view_year)) {
+        generated <- generated[.matchYear(generated$experiment_name, input$filter_view_year), , drop = FALSE]
+      }
+      if (!is.null(input$filter_view_search) && nzchar(input$filter_view_search)) {
+        generated <- generated[grepl(trimws(input$filter_view_search), generated$experiment_name, ignore.case = TRUE, fixed = TRUE), , drop = FALSE]
+      }
       if (nrow(generated) > 0) {
         choices <- setNames(generated$experiment_id, generated$experiment_name)
-        updateSelectInput(session, "view_exp", choices = choices)
+        updateSelectizeInput(session, "view_exp", choices = choices)
       } else {
-        updateSelectInput(session, "view_exp", choices = NULL)
+        updateSelectizeInput(session, "view_exp", choices = NULL)
       }
     })
 
@@ -755,25 +770,27 @@ population_server <- function(id) {
         # 刷新田试记录下拉列表
         records <- listPopulationRecords(db_path = db_path)
         generated <- records[records$has_generated == 1, ]
+        if (!is.null(input$filter_view_year) && nzchar(input$filter_view_year)) {
+          generated <- generated[.matchYear(generated$experiment_name, input$filter_view_year), , drop = FALSE]
+        }
+        if (!is.null(input$filter_view_search) && nzchar(input$filter_view_search)) {
+          generated <- generated[grepl(trimws(input$filter_view_search), generated$experiment_name, ignore.case = TRUE, fixed = TRUE), , drop = FALSE]
+        }
         if (nrow(generated) > 0) {
           choices <- setNames(generated$experiment_id, generated$experiment_name)
-          updateSelectInput(session, "view_exp", choices = choices, selected = character(0))
+          updateSelectizeInput(session, "view_exp", choices = choices, selected = character(0))
         } else {
-          updateSelectInput(session, "view_exp", choices = NULL, selected = character(0))
+          updateSelectizeInput(session, "view_exp", choices = NULL, selected = character(0))
         }
 
         # 刷新生成记录本页面的下拉列表
         rv$records <- records
-        generated2 <- records[records$has_generated == 1, ]
-        not_generated2 <- records[records$has_generated == 0, ]
-        choices2 <- c(
-          "已生成" = if (nrow(generated2) > 0) setNames(generated2$experiment_id, generated2$experiment_name) else character(0),
-          "未生成" = if (nrow(not_generated2) > 0) setNames(not_generated2$experiment_id, not_generated2$experiment_name) else character(0)
-        )
-        updateSelectInput(
+        updateSelectizeInput(
           session,
           "select_exp",
-          choices = choices2,
+          choices = buildGeneratedChoices(records,
+            year_filter = input$filter_year,
+            search_filter = input$filter_search),
           selected = rv$selected_exp
         )
 
@@ -792,12 +809,22 @@ population_server <- function(id) {
     observe({
       rv$records <- listPopulationRecords(db_path = db_path)
       # 构建分组choices
-      updateSelectInput(
+      updateSelectizeInput(
         session,
         "select_exp",
-        choices = buildGeneratedChoices(rv$records),
+        choices = buildGeneratedChoices(rv$records,
+          year_filter = input$filter_year,
+          search_filter = input$filter_search),
         selected = rv$selected_exp
       )
+    })
+
+    observe({
+      filters <- buildRecordFilters(rv$records)
+      updateSelectizeInput(session, "filter_year",
+        choices = c("全部" = "", filters$years), selected = "")
+      updateSelectizeInput(session, "filter_view_year",
+        choices = c("全部" = "", filters$years), selected = "")
     })
 
     observeEvent(input$select_exp, {
@@ -1170,9 +1197,15 @@ population_server <- function(id) {
         # 自动刷新田试记录
         records <- listPopulationRecords(db_path = db_path)
         generated <- records[records$has_generated == 1, ]
+        if (!is.null(input$filter_view_year) && nzchar(input$filter_view_year)) {
+          generated <- generated[.matchYear(generated$experiment_name, input$filter_view_year), , drop = FALSE]
+        }
+        if (!is.null(input$filter_view_search) && nzchar(input$filter_view_search)) {
+          generated <- generated[grepl(trimws(input$filter_view_search), generated$experiment_name, ignore.case = TRUE, fixed = TRUE), , drop = FALSE]
+        }
         if (nrow(generated) > 0) {
           choices <- setNames(generated$experiment_id, generated$experiment_name)
-          updateSelectInput(session, "view_exp", choices = choices, selected = rv$selected_exp)
+          updateSelectizeInput(session, "view_exp", choices = choices, selected = rv$selected_exp)
           rv$view_data <- getPopulationFieldRecord(rv$selected_exp, db_path = db_path)
           rv$view_exp_name <- rv$selected_exp
         }

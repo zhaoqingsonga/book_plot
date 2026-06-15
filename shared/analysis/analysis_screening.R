@@ -58,6 +58,12 @@ analyze_screening <- function(df, rank_threshold = 60,
   promoted_py <- adapt_to_pinyin(promoted)
   eliminated_py <- adapt_to_pinyin(eliminated)
 
+  # 亩产保留两位小数
+  if ("MuChan" %in% colnames(promoted_py))
+    promoted_py$MuChan <- round(promoted_py$MuChan, 2)
+  if ("MuChan" %in% colnames(eliminated_py))
+    eliminated_py$MuChan <- round(eliminated_py$MuChan, 2)
+
   # 筛选前后对比图
   comparison_plot <- tryCatch({
     plot_selection_comparison(rdf, promoted)

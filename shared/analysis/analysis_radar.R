@@ -25,12 +25,18 @@ plot_radar_top <- function(df, top_n = 5) {
   radar_data <- df %>%
     dplyr::select(dplyr::any_of(radar_cols)) %>%
     dplyr::filter(!is.na(MuChan)) %>%
+    dplyr::group_by(name) %>%
+    dplyr::summarise(
+      dplyr::across(dplyr::where(is.numeric), ~ mean(.x, na.rm = TRUE)),
+      dplyr::across(dplyr::any_of("stageid"), ~ dplyr::first(.x)),
+      .groups = "drop"
+    ) %>%
     dplyr::arrange(dplyr::desc(MuChan)) %>%
     dplyr::slice_head(n = top_n)
 
   if (nrow(radar_data) < 1) return(NULL)
 
-  # 构建显示标签：stageid<name
+  # 构建显示标签：stageid<name（确保唯一）
   display_names <- radar_data$name
   if ("stageid" %in% colnames(radar_data)) {
     display_names <- ifelse(
@@ -40,6 +46,7 @@ plot_radar_top <- function(df, top_n = 5) {
       radar_data$name
     )
   }
+  display_names <- make.unique(display_names, sep = "_")
 
   # 指标的显示名和单位
   indicator_info <- list(

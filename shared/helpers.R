@@ -52,8 +52,30 @@ addTraitColumns <- function(df) {
   df
 }
 
-# 构建已生成/未生成选项列表（用于updateSelectInput）
-buildGeneratedChoices <- function(records) {
+# 从试验名称中提取年份
+buildRecordFilters <- function(records) {
+  names <- records$experiment_name
+  years <- regmatches(names, regexpr("\\d{4}", names))
+  years <- as.integer(years)
+  years <- sort(unique(years[!is.na(years)]), decreasing = TRUE)
+  year_labels <- setNames(as.character(years), paste0(years, "年"))
+  list(years = year_labels)
+}
+
+# 从名称匹配年份（用于过滤）
+.matchYear <- function(name, year) {
+  if (is.null(year) || !nzchar(year)) return(TRUE)
+  grepl(year, name, fixed = TRUE)
+}
+
+# 构建已生成/未生成选项列表（用于updateSelectizeInput）
+buildGeneratedChoices <- function(records, year_filter = NULL, search_filter = NULL) {
+  if (!is.null(year_filter) && nzchar(year_filter)) {
+    records <- records[.matchYear(records$experiment_name, year_filter), , drop = FALSE]
+  }
+  if (!is.null(search_filter) && nzchar(trimws(search_filter))) {
+    records <- records[grepl(trimws(search_filter), records$experiment_name, ignore.case = TRUE, fixed = TRUE), , drop = FALSE]
+  }
   generated <- records[records$has_generated == 1, ]
   not_generated <- records[records$has_generated == 0, ]
   c(

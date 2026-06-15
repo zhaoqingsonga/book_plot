@@ -93,6 +93,8 @@ generate_yield_growth_chart_shiny <- function(df, stable_genotypes) {
         样本数量   = dplyr::n(),
         .groups = "drop"
       ) %>%
+      dplyr::filter(!(is.na(平均亩产) | is.nan(平均亩产)) |
+                    !(is.na(平均生育期) | is.nan(平均生育期))) %>%
       dplyr::arrange(dplyr::desc(平均亩产))
 
     if (nrow(stage_data) == 0) next
@@ -125,6 +127,17 @@ generate_yield_growth_chart_shiny <- function(df, stable_genotypes) {
 
     has_control <- nrow(control_data) > 0 &&
       any(!is.na(control_data_merge$对照亩产))
+
+    # 计算材料与对照的生育期差值
+    growth_diff_str <- ""
+    variety_growth_avg <- mean(stage_data$平均生育期, na.rm = TRUE)
+    if (has_control && any(!is.na(control_data_merge$对照生育期))) {
+      control_growth_avg <- mean(control_data_merge$对照生育期, na.rm = TRUE)
+      if (!is.na(variety_growth_avg) && !is.na(control_growth_avg)) {
+        diff <- variety_growth_avg - control_growth_avg
+        growth_diff_str <- sprintf(" | 生育期差: %+.1f天", diff)
+      }
+    }
 
     # 3c. 计算双Y轴比例系数
     yield_max  <- max(stage_data$平均亩产, control_data_merge$对照亩产, na.rm = TRUE)
@@ -251,7 +264,7 @@ generate_yield_growth_chart_shiny <- function(df, stable_genotypes) {
       ) +
       ggplot2::labs(
         title    = "不同地点产量与生育期对比图",
-        subtitle = paste("品种:", display_label),
+        subtitle = paste0("品种: ", display_label, growth_diff_str),
         x        = "测试地点",
         y        = "平均亩产 (kg)",
         caption  = paste0(

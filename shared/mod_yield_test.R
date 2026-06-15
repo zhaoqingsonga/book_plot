@@ -45,7 +45,7 @@ yield_test_ui <- function(id) {
                   placeholder = "未选择文件",
                   width = "100%"
                 ),
-                selectInput(ns("sheet"), "选择工作表", choices = NULL, width = "100%"),
+                selectizeInput(ns("sheet"), "选择工作表", choices = NULL, width = "100%"),
                 div(class = "button-group",
                   actionButton(ns("btn_preview"), "预览", icon = icon("eye"), class = "btn-info"),
                   actionButton(ns("btn_save"), "保存", icon = icon("save"), class = "btn-primary")
@@ -104,7 +104,11 @@ yield_test_ui <- function(id) {
               div(class = "sidebar-panel",
                 # === 试验选择（不折叠）===
                 h5(icon("database"), " 选择试验"),
-                selectInput(ns("select_exp"), "", choices = NULL, width = "100%"),
+                fluidRow(
+                  column(6, selectizeInput(ns("filter_year"), "年份", choices = NULL, width = "100%")),
+                  column(6, textInput(ns("filter_search"), "搜索", placeholder = "输入关键词...", width = "100%"))
+                ),
+                selectizeInput(ns("select_exp"), "", choices = NULL, width = "100%"),
 
                 # === 折叠面板：种植参数 ===
                 accordion(
@@ -195,7 +199,11 @@ yield_test_ui <- function(id) {
                 ),
                 p("查看该试验已生成的田试记录（planting数据+88个性状）", class = "text-muted"),
 
-                selectInput(ns("view_exp"), "选择试验", choices = NULL, width = "100%"),
+                fluidRow(
+                  column(6, selectizeInput(ns("filter_view_year"), "年份", choices = NULL, width = "100%")),
+                  column(6, textInput(ns("filter_view_search"), "搜索", placeholder = "输入关键词...", width = "100%"))
+                ),
+                selectizeInput(ns("view_exp"), "选择试验", choices = NULL, width = "100%"),
                 div(class = "button-group",
                   actionButton(ns("btn_view_analyze"), "分析", icon = icon("chart-bar"), class = "btn-info btn-sm"),
                   downloadButton(ns("btn_view_download"), "下载", class = "btn-success btn-sm"),
@@ -246,7 +254,7 @@ yield_test_server <- function(id) {
 
         # 默认选择 "planting" 工作表（如果存在）
         selected <- if ("planting" %in% sheets) "planting" else sheets[1]
-        updateSelectInput(session, "sheet", choices = sheets, selected = selected)
+        updateSelectizeInput(session, "sheet", choices = sheets, selected = selected)
       }, error = function(e) {
         showNotification(paste("读取失败:", e$message), type = "error")
       })
@@ -320,7 +328,7 @@ yield_test_server <- function(id) {
         fluidRow(
           column(4, p(strong(label))),
           column(8,
-            selectInput(ns(paste0("map_", field)),
+            selectizeInput(ns(paste0("map_", field)),
               label = NULL,
               choices = rv$all_columns,
               selected = rv$all_columns[1],
@@ -424,10 +432,12 @@ yield_test_server <- function(id) {
 
         rv$records <- listYieldTestRecords(db_path = db_path)
         # 构建分组choices
-        updateSelectInput(
+        updateSelectizeInput(
           session,
           "select_exp",
-          choices = buildGeneratedChoices(rv$records),
+          choices = buildGeneratedChoices(rv$records,
+            year_filter = input$filter_year,
+            search_filter = input$filter_search),
           selected = rv$selected_exp
         )
 
@@ -530,11 +540,17 @@ yield_test_server <- function(id) {
     observe({
       records <- listYieldTestRecords(db_path = db_path)
       generated <- records[records$has_generated == 1, ]
+      if (!is.null(input$filter_view_year) && nzchar(input$filter_view_year)) {
+        generated <- generated[.matchYear(generated$experiment_name, input$filter_view_year), , drop = FALSE]
+      }
+      if (!is.null(input$filter_view_search) && nzchar(input$filter_view_search)) {
+        generated <- generated[grepl(trimws(input$filter_view_search), generated$experiment_name, ignore.case = TRUE, fixed = TRUE), , drop = FALSE]
+      }
       if (nrow(generated) > 0) {
         choices <- setNames(generated$experiment_id, generated$experiment_name)
-        updateSelectInput(session, "view_exp", choices = choices)
+        updateSelectizeInput(session, "view_exp", choices = choices)
       } else {
-        updateSelectInput(session, "view_exp", choices = NULL)
+        updateSelectizeInput(session, "view_exp", choices = NULL)
       }
     })
 
@@ -739,7 +755,7 @@ yield_test_server <- function(id) {
           tabs$quality <- tabPanel("性状分布", icon = icon("chart-pie"),
             div(class = "p-3",
               fluidRow(
-                column(4, selectInput(ns("quality_site_select"), "选择地点",
+                column(4, selectizeInput(ns("quality_site_select"), "选择地点",
                   choices = c("全部", qt_sites),
                   selected = if ("安徽宿州" %in% qt_sites) "安徽宿州" else "全部",
                   width = "100%"))),
@@ -826,7 +842,9 @@ yield_test_server <- function(id) {
             tags$h5("GGE 双标图"), renderPlot({ result$plots$gge_biplot }, height = 500),
             tags$hr(), tags$h5("稳定性 × 产量"), renderPlot({ result$plots$gge_stability }, height = 500),
             if (!is.null(result$plots$gge_heatmap)) tagList(
-              tags$hr(), tags$h5("G×E 互作热图"), renderPlot({ result$plots$gge_heatmap }, height = 500)
+              tags$hr(), tags$h5("G×E 互作热图"),
+                renderPlot({ result$plots$gge_heatmap },
+                  height = if (!is.null(result$plots$gge_heatmap_height)) result$plots$gge_heatmap_height else 500)
             ),
             tags$hr(), tags$h5("基因型排名"), renderPlot({ result$plots$gge_ranking }, height = 500),
             if (!is.null(result$tables$gge_stable) && nrow(result$tables$gge_stable) > 0) tagList(
@@ -999,19 +1017,27 @@ yield_test_server <- function(id) {
         # 刷新田试记录下拉列表
         records <- listYieldTestRecords(db_path = db_path)
         generated <- records[records$has_generated == 1, ]
+        if (!is.null(input$filter_view_year) && nzchar(input$filter_view_year)) {
+          generated <- generated[.matchYear(generated$experiment_name, input$filter_view_year), , drop = FALSE]
+        }
+        if (!is.null(input$filter_view_search) && nzchar(input$filter_view_search)) {
+          generated <- generated[grepl(trimws(input$filter_view_search), generated$experiment_name, ignore.case = TRUE, fixed = TRUE), , drop = FALSE]
+        }
         if (nrow(generated) > 0) {
           choices <- setNames(generated$experiment_id, generated$experiment_name)
-          updateSelectInput(session, "view_exp", choices = choices, selected = character(0))
+          updateSelectizeInput(session, "view_exp", choices = choices, selected = character(0))
         } else {
-          updateSelectInput(session, "view_exp", choices = NULL, selected = character(0))
+          updateSelectizeInput(session, "view_exp", choices = NULL, selected = character(0))
         }
 
         # 刷新生成记录本页面的下拉列表
         rv$records <- records
-        updateSelectInput(
+        updateSelectizeInput(
           session,
           "select_exp",
-          choices = buildGeneratedChoices(records),
+          choices = buildGeneratedChoices(records,
+            year_filter = input$filter_year,
+            search_filter = input$filter_search),
           selected = rv$selected_exp
         )
 
@@ -1030,12 +1056,22 @@ yield_test_server <- function(id) {
     observe({
       rv$records <- listYieldTestRecords(db_path = db_path)
       # 构建分组choices
-      updateSelectInput(
+      updateSelectizeInput(
         session,
         "select_exp",
-        choices = buildGeneratedChoices(rv$records),
+        choices = buildGeneratedChoices(rv$records,
+          year_filter = input$filter_year,
+          search_filter = input$filter_search),
         selected = rv$selected_exp
       )
+    })
+
+    observe({
+      filters <- buildRecordFilters(rv$records)
+      updateSelectizeInput(session, "filter_year",
+        choices = c("全部" = "", filters$years), selected = "")
+      updateSelectizeInput(session, "filter_view_year",
+        choices = c("全部" = "", filters$years), selected = "")
     })
 
     observeEvent(input$select_exp, {
@@ -1262,9 +1298,15 @@ yield_test_server <- function(id) {
         # 自动刷新田试记录
         records <- listYieldTestRecords(db_path = db_path)
         generated <- records[records$has_generated == 1, ]
+        if (!is.null(input$filter_view_year) && nzchar(input$filter_view_year)) {
+          generated <- generated[.matchYear(generated$experiment_name, input$filter_view_year), , drop = FALSE]
+        }
+        if (!is.null(input$filter_view_search) && nzchar(input$filter_view_search)) {
+          generated <- generated[grepl(trimws(input$filter_view_search), generated$experiment_name, ignore.case = TRUE, fixed = TRUE), , drop = FALSE]
+        }
         if (nrow(generated) > 0) {
           choices <- setNames(generated$experiment_id, generated$experiment_name)
-          updateSelectInput(session, "view_exp", choices = choices, selected = rv$selected_exp)
+          updateSelectizeInput(session, "view_exp", choices = choices, selected = rv$selected_exp)
           rv$view_data <- getYieldTestFieldRecord(rv$selected_exp, db_path = db_path)
           rv$view_exp_name <- rv$selected_exp
         }

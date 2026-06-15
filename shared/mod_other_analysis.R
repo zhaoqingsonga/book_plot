@@ -88,11 +88,11 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     yc <- tagList(yc,
       tags$hr(), tags$h5("产量排名"),
       DT::renderDataTable({DT::datatable(result$tables$yield_ranking,
-        options=list(pageLength=10,scrollX=TRUE,dom='ftip'), rownames=FALSE, class="compact")}))
+        options=list(pageLength=10,scrollX=TRUE,dom='tip'), rownames=FALSE, class="compact")}))
     if (!is.null(result$tables$cross_location_avg))
       yc <- tagList(yc, tags$hr(), tags$h5("各地点的平均"),
         DT::renderDataTable({DT::datatable(result$tables$cross_location_avg,
-          options=list(pageLength=15,scrollX=TRUE,dom='ftip'), rownames=FALSE, class="compact")}))
+          options=list(pageLength=15,scrollX=TRUE,dom='tip'), rownames=FALSE, class="compact")}))
 
     tabs$yield <- tabPanel("产量概览", icon=icon("chart-bar"), div(class="p-3", yc))
   }
@@ -108,7 +108,7 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
           column(6, renderPlot({result$plots[[nm]]}, height=300))))))
     } else {
       tabs$quality <- tabPanel("性状分布", icon=icon("chart-pie"), div(class="p-3",
-        fluidRow(column(4, selectInput(ns("other_qt_site"), "选择地点",
+        fluidRow(column(4, selectizeInput(ns("other_qt_site"), "选择地点",
           choices=c("全部", sites),
           selected=if("安徽宿州"%in%sites)"安徽宿州"else"全部", width="100%"))),
         uiOutput(ns("other_qt_content"))))
@@ -135,7 +135,7 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     sc <- tagList(
       tags$h5("晋级材料"),
       DT::renderDataTable({DT::datatable(result$tables$promoted,
-        options=list(pageLength=10,scrollX=TRUE,dom='ftip'), rownames=FALSE, class="compact")}))
+        options=list(pageLength=10,scrollX=TRUE,dom='tip'), rownames=FALSE, class="compact")}))
     if (!is.null(result$plots$comparison))
       sc <- tagList(sc, tags$hr(), tags$h5("筛选前后性状对比"), renderPlot({result$plots$comparison}, height=500))
     if (!is.null(result$plots$radar))
@@ -156,10 +156,10 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     pc <- tagList(
       tags$h5("优良亲本"),
       DT::renderDataTable({DT::datatable(result$tables$parent_stats,
-        options=list(pageLength=10,dom='ftip'), rownames=FALSE, class="compact")}),
+        options=list(pageLength=10,dom='tip'), rownames=FALSE, class="compact")}),
       tags$hr(), tags$h5("优良组合"),
       DT::renderDataTable({DT::datatable(result$tables$cross_stats,
-        options=list(pageLength=10,dom='ftip'), rownames=FALSE, class="compact")}))
+        options=list(pageLength=10,dom='tip'), rownames=FALSE, class="compact")}))
     if (!is.null(result$plots$parent_plot))
       pc <- tagList(pc, tags$hr(), renderPlot({result$plots$parent_plot}, height=600))
     tabs$parent <- tabPanel("亲本分析", icon=icon("venus-mars"), div(class="p-3", pc))
@@ -171,16 +171,18 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
       tags$h5("GGE 双标图"), renderPlot({result$plots$gge_biplot}, height=500),
       tags$hr(), tags$h5("稳定性 × 产量"), renderPlot({result$plots$gge_stability}, height=500))
     if (!is.null(result$plots$gge_heatmap))
-      gc <- tagList(gc, tags$hr(), tags$h5("G×E 互作热图"), renderPlot({result$plots$gge_heatmap}, height=500))
+      gc <- tagList(gc, tags$hr(), tags$h5("G×E 互作热图"),
+        renderPlot({result$plots$gge_heatmap},
+          height = if (!is.null(result$plots$gge_heatmap_height)) result$plots$gge_heatmap_height else 500))
     gc <- tagList(gc, tags$hr(), tags$h5("基因型排名"), renderPlot({result$plots$gge_ranking}, height=500))
     if (!is.null(result$tables$gge_stable) && nrow(result$tables$gge_stable)>0)
       gc <- tagList(gc, tags$hr(), tags$h5("高产稳定基因型"),
         DT::renderDataTable({DT::datatable(result$tables$gge_stable,
-          options=list(pageLength=10,dom='ftip'), rownames=FALSE, class="compact")}))
+          options=list(pageLength=10,dom='tip'), rownames=FALSE, class="compact")}))
     if (!is.null(result$tables$gge_unstable) && nrow(result$tables$gge_unstable)>0)
       gc <- tagList(gc, tags$hr(), tags$h5("高产不稳基因型（需关注）"),
         DT::renderDataTable({DT::datatable(result$tables$gge_unstable,
-          options=list(pageLength=10,dom='ftip'), rownames=FALSE, class="compact")}))
+          options=list(pageLength=10,dom='tip'), rownames=FALSE, class="compact")}))
     tabs$gge <- tabPanel("GGE分析", icon=icon("globe"), div(class="p-3", gc))
   }
 
@@ -199,7 +201,7 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     tabs$cross_site <- tabPanel("跨地点排名", icon=icon("map-marked-alt"), div(class="p-3",
       tags$h5("跨地点产量排名"),
       DT::renderDataTable({DT::datatable(result$tables$cross_site_ranking,
-        options=list(pageLength=10,scrollX=TRUE,dom='ftip'), rownames=FALSE, class="compact")})))
+        options=list(pageLength=10,scrollX=TRUE,dom='tip'), rownames=FALSE, class="compact")})))
 
   # ===== Export =====
   tabs$export <- tabPanel("导出", icon=icon("download"), div(class="p-3",

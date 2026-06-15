@@ -22,19 +22,19 @@ experiments_ui <- function(id) {
             h5(icon("list"), " 试验列表"),
 
             # 年份筛选
-            selectInput(ns("filter_year"), "年份",
+            selectizeInput(ns("filter_year"), "年份",
               choices = c("全部" = ""),
               selected = as.character(Sys.Date()[[1]]), width = "100%"
             ),
 
             # 类型筛选
-            selectInput(ns("filter_type"), "记录类型",
+            selectizeInput(ns("filter_type"), "记录类型",
               choices = c("全部" = "", "群体" = "population", "株行" = "line_selection", "产比" = "yield_test"),
               selected = "", width = "100%"
             ),
 
             # 地点筛选
-            selectInput(ns("filter_location"), "地点",
+            selectizeInput(ns("filter_location"), "地点",
               choices = c("全部" = ""),
               selected = "安徽宿州", width = "100%"
             ),
@@ -382,7 +382,7 @@ experiments_server <- function(id) {
       selected_year <- isolate(input$filter_year)
       selected_year <- if (!is.null(selected_year) && selected_year %in% all_years) selected_year else ""
 
-      updateSelectInput(
+      updateSelectizeInput(
         session,
         "filter_year",
         choices = c("全部" = "", stats::setNames(all_years, all_years)),
@@ -394,7 +394,7 @@ experiments_server <- function(id) {
       selected_loc <- isolate(input$filter_location)
       selected_loc <- if (!is.null(selected_loc) && selected_loc %in% all_locs) selected_loc else ""
 
-      updateSelectInput(
+      updateSelectizeInput(
         session,
         "filter_location",
         choices = c("全部" = "", stats::setNames(all_locs, all_locs)),
@@ -839,9 +839,9 @@ experiments_server <- function(id) {
 
     # --- 重置 ---
     observeEvent(input$btn_reset, {
-      updateSelectInput(session, "filter_year", selected = as.character(Sys.Date()[[1]]))
-      updateSelectInput(session, "filter_type", selected = "")
-      updateSelectInput(session, "filter_location", selected = "安徽宿州")
+      updateSelectizeInput(session, "filter_year", selected = as.character(Sys.Date()[[1]]))
+      updateSelectizeInput(session, "filter_type", selected = "")
+      updateSelectizeInput(session, "filter_location", selected = "安徽宿州")
       updateTextInput(session, "filter_search", value = "")
       selected_experiment(NULL)
       session$sendCustomMessage("toggle_delete_btn", list(show = FALSE))

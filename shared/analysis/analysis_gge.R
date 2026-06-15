@@ -160,6 +160,11 @@ analyze_gge <- function(df, trial_info) {
 
     step <- "rank"; gp$Top <- ifelse(rank(-gp$Mean_Yield) <= min(15, nG), "Top", "Other")
 
+    # AEA (Average Environment Axis) — 平均环境轴
+    avg_env_pc1 <- mean(ep$PC1, na.rm = TRUE)
+    avg_env_pc2 <- mean(ep$PC2, na.rm = TRUE)
+    aea_extend <- 1.2  # 轴线向两端延伸比例
+
     # Biplot
     step <- "biplot"
     if (requireNamespace("ggplot2", quietly = TRUE) && requireNamespace("ggrepel", quietly = TRUE)) {
@@ -171,11 +176,25 @@ analyze_gge <- function(df, trial_info) {
           color = "red", size = 3.5, fontface = "bold") +
         ggrepel::geom_text_repel(data = dplyr::filter(gp, Top == "Top"),
           ggplot2::aes(x = PC1, y = PC2, label = Genotype), color = "blue", size = 2.5, max.overlaps = 20) +
+        ggplot2::geom_segment(
+          data = data.frame(x1 = -avg_env_pc1 * aea_extend, y1 = -avg_env_pc2 * aea_extend,
+                            x2 = avg_env_pc1 * aea_extend, y2 = avg_env_pc2 * aea_extend),
+          ggplot2::aes(x = x1, y = y1, xend = x2, yend = y2),
+          color = "#228B22", linewidth = 1.0, inherit.aes = FALSE) +
+        ggplot2::geom_point(
+          data = data.frame(x = avg_env_pc1, y = avg_env_pc2),
+          ggplot2::aes(x = x, y = y),
+          shape = 15, size = 3, color = "#228B22", inherit.aes = FALSE) +
+        ggrepel::geom_text_repel(
+          data = data.frame(x = avg_env_pc1, y = avg_env_pc2),
+          ggplot2::aes(x = x, y = y, label = "平均环境"),
+          color = "#228B22", size = 3.5, fontface = "bold", inherit.aes = FALSE) +
         ggplot2::geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.3) +
         ggplot2::geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.3) +
         ggplot2::scale_color_gradientn(colors = rev(RColorBrewer::brewer.pal(11, "RdYlBu")), name = "产量") +
         ggplot2::scale_size_manual(values = c(Top = 3, Other = 2)) +
-        ggplot2::labs(title = "GGE双标图", subtitle = paste0("PC1:", pc1, "% | PC2:", pc2, "%"),
+        ggplot2::labs(title = "GGE双标图",
+          subtitle = paste0("PC1:", pc1, "% | PC2:", pc2, "% | 绿线=平均环境轴(AEA)"),
           x = paste0("PC1(", pc1, "%)"), y = paste0("PC2(", pc2, "%)")) +
         ggplot2::theme_minimal() +
         ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 16, face = "bold"))
@@ -213,10 +232,15 @@ analyze_gge <- function(df, trial_info) {
           parts <- strsplit(as.character(tbl$Genotype), "<", fixed = TRUE)
           tbl$stageid <- vapply(parts, `[`, character(1), 1L)
           tbl$name    <- vapply(parts, function(x) if(length(x)>1) x[2] else "", character(1))
-          cols_keep <- setdiff(names(tbl), "Genotype")  # stageid+name 已取代复合标签
+          cols_keep <- setdiff(names(tbl), "Genotype")
           tbl <- tbl[, cols_keep, drop = FALSE]
-          # 把 stageid, name 提到最前面
           result[[key]] <- tbl[, c("stageid","name", setdiff(names(tbl), c("stageid","name"))), drop = FALSE]
+        }
+      }
+      # 产量和稳定性保留两位小数
+      if (!is.null(result[[key]]) && nrow(result[[key]]) > 0) {
+        for (cn in intersect(c("Mean_Yield", "Stability"), names(result[[key]]))) {
+          result[[key]][[cn]] <- round(result[[key]][[cn]], 2)
         }
       }
     }
@@ -237,25 +261,30 @@ analyze_gge <- function(df, trial_info) {
       ggplot2::theme_minimal() +
       ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 16, face = "bold"))
 
-    # Heatmap
+    # Heatmap — 高产品种（高产稳定 + 高产不稳），低产在上
     step <- "heatmap"
-    nh <- min(nG, 30)
-    if (nh >= 2 && nE >= 2) {
-      hm_mat <- gm_mat[1:nh, 1:nE, drop = FALSE]
-      rownames(hm_mat) <- yc$labelgen[1:nh]
+    hm_genotypes <- sd_data %>%
+      dplyr::filter(Category %in% c("高产稳定", "高产不稳")) %>%
+      dplyr::arrange(Mean_Yield)
+    if (nrow(hm_genotypes) >= 2 && nE >= 2) {
+      hm_rows <- match(hm_genotypes$Genotype, yc$labelgen)
+      hm_mat <- gm_mat[hm_rows, 1:nE, drop = FALSE]
+      rownames(hm_mat) <- hm_genotypes$Genotype
       colnames(hm_mat) <- yc$labelenv[1:nE]
       hm <- as.data.frame(as.table(hm_mat))
-      colnames(hm) <- c("Genotype", "Environment", "Value")
+      colnames(hm) <- c("品种", "环境", "中心化产量")
       result$heatmap <- ggplot2::ggplot(hm,
-        ggplot2::aes(x = Environment, y = Genotype, fill = Value)) +
+        ggplot2::aes(x = 环境, y = 品种, fill = `中心化产量`)) +
         ggplot2::geom_tile(color = "white", size = 0.5) +
         ggplot2::scale_fill_gradient2(low = "#D73027", mid = "#FFFFBF",
-          high = "#1A9850", midpoint = 0) +
-        ggplot2::labs(title = "GxE热图") +
+          high = "#1A9850", midpoint = 0, name = "中心化产量") +
+        ggplot2::labs(title = "G×E互作热图", x = "环境", y = "品种") +
         ggplot2::theme_minimal() +
         ggplot2::theme(plot.title = ggplot2::element_text(hjust = 0.5, size = 14, face = "bold"),
-          axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, size = 9),
-          axis.text.y = ggplot2::element_text(size = 7))
+          axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, size = 12),
+          axis.text.y = ggplot2::element_text(size = 11, margin = ggplot2::margin(t = 0, r = 0, b = 0, l = 0),
+            lineheight = 1.4))
+      result$heatmap_height <- max(300, nrow(hm_genotypes) * 14)
     }
 
     # Ranking

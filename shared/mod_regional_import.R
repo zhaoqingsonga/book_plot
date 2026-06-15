@@ -54,7 +54,7 @@ regional_import_ui <- function(id) {
         tabPanel("分析", icon = icon("chart-bar"),
           p(class = "text-muted fb-panel-intro", "数据保存在 ", tags$code("data/other_trials.sqlite")),
           fluidRow(
-            column(6, selectInput(ns("selected_batch"), "选择试验", choices = NULL, width = "100%")),
+            column(6, selectizeInput(ns("selected_batch"), "选择试验", choices = NULL, width = "100%")),
             column(6, div(class = "d-flex gap-1 pt-4",
               actionButton(ns("btn_analyze_batch"), "分析", icon=icon("chart-bar"), class="btn-outline-primary btn-sm"),
               downloadButton(ns("btn_download_result"), "下载", class="btn-outline-secondary btn-sm"),
@@ -233,12 +233,12 @@ regional_import_server <- function(id) {
 
     observe({
       batches <- getBatches()
-      if (nrow(batches)==0) { updateSelectInput(session, "selected_batch", choices=c("暂无数据"="")) }
+      if (nrow(batches)==0) { updateSelectizeInput(session, "selected_batch", choices=c("暂无数据"="")) }
       else {
         ch <- setNames(batches$import_batch_id, paste0(batches$trial_name," | ",batches$group_label," | ",batches$row_count,"行 | ",batches$import_time))
         cur <- isolate(input$selected_batch)
         if (!cur %in% batches$import_batch_id) cur <- batches$import_batch_id[1]
-        updateSelectInput(session, "selected_batch", choices=ch, selected=cur)
+        updateSelectizeInput(session, "selected_batch", choices=ch, selected=cur)
       }
     })
 
@@ -290,7 +290,7 @@ regional_import_server <- function(id) {
         "KaoZhongZhuShu","XiaoQuShouHuoZhuShu","WanHaoLiLv","PoSuiLiLv","BingLiLv","ZiBanLiLv",
         "HeBanLiLv","ShuangMeiLiLv","HuiBanLiLv","ChongShiLiLv","BoZhongPenShu","BoZhongLiShu",
         "ChuMiaoShu","ChuMiaoLiShu","ZaJiaoHuaShu","ChengHuoJiaShu","ZhaJiaoliShu","HuiFuLv"))
-      dt <- DT::datatable(display, filter="top", options=list(pageLength=25,
+      dt <- DT::datatable(display, options=list(pageLength=25,
         lengthMenu=list(c(10,25,50,100,-1),c("10","25","50","100","全部")), scrollX=TRUE, scrollY="500px",
         autoWidth=TRUE, dom="lfrtip", language=list(url="//cdn.datatables.net/plug-ins/1.13.7/i18n/zh-Hans.json")),
         rownames=FALSE, class="cell-border stripe hover compact")
@@ -346,6 +346,7 @@ regional_import_server <- function(id) {
         showModal(modalDialog(
           title = div(icon("chart-bar"), paste("数据分析 —", tname)),
           size = "xl", easyClose = TRUE, footer = modalButton("关闭"),
+          tags$head(tags$style(".modal-xl { max-width: 95vw !important; }")),
           do.call(tabsetPanel, c(list(id = ns("other_analysis_tabs")), unname(analysis$tabs)))))
         removeNotification(id = "other_analysis_working")
       })

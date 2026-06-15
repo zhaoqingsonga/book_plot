@@ -192,6 +192,7 @@ run_yield_test_analysis <- function(df, trial_info, has_traits) {
           plots$gge_biplot    <- gge$biplot
           plots$gge_stability <- gge$stability_scatter
           plots$gge_heatmap   <- gge$heatmap
+          plots$gge_heatmap_height <- if (!is.null(gge$heatmap_height)) gge$heatmap_height else 500
           plots$gge_ranking   <- gge$ranking
           tables$gge_stable   <- gge$stable_genotypes
           tables$gge_unstable <- gge$unstable_genotypes
