@@ -29,6 +29,7 @@ initOtherDb <- function(db_path = OTHER_TRIALS_DB) {
       trial_name TEXT,
       group_label TEXT,
       import_time TEXT,
+      fieldid TEXT,
       name TEXT NOT NULL,
       place TEXT NOT NULL,
       MuChan REAL,
@@ -36,7 +37,10 @@ initOtherDb <- function(db_path = OTHER_TRIALS_DB) {
       XiaoQuShiShouMianJi REAL,
       HanShuiLiang REAL,
       stageid TEXT,
+      code TEXT,
       rp TEXT,
+      rows TEXT,
+      line_number TEXT,
       treatment TEXT,
       is_ck INTEGER DEFAULT 0,
       ma TEXT,
@@ -147,6 +151,23 @@ initOtherDb <- function(db_path = OTHER_TRIALS_DB) {
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_other_batch ON other_trial_data(import_batch_id)")
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_other_name ON other_trial_data(name)")
   DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_other_place ON other_trial_data(place)")
+
+  # 迁移：为旧数据库添加缺少的列
+  existing_cols <- DBI::dbGetQuery(con, "PRAGMA table_info(other_trial_data)")$name
+  new_cols <- list(
+    fieldid     = "TEXT",
+    code        = "TEXT",
+    rows        = "TEXT",
+    line_number = "TEXT"
+  )
+  for (col_name in names(new_cols)) {
+    if (!col_name %in% existing_cols) {
+      tryCatch(
+        DBI::dbExecute(con, sprintf("ALTER TABLE other_trial_data ADD COLUMN %s %s", col_name, new_cols[[col_name]])),
+        error = function(e) warning("添加列 ", col_name, " 失败: ", e$message, call. = FALSE)
+      )
+    }
+  }
 }
 
 generateBatchId <- function() {

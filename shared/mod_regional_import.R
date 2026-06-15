@@ -101,9 +101,11 @@ regional_import_server <- function(id) {
     output$mapping_ui <- renderUI({
       req(rv$raw_data, rv$user_mapping)
       TRAIT_DISPLAY_NAMES <- c(
-        "品种(name)"="name","地点(place)"="place","亩产(MuChan)"="MuChan",
+        "田间标识号(fieldid)"="fieldid","品种(name)"="name","编号(code)"="code",
+        "地点(place)"="place","亩产(MuChan)"="MuChan",
         "小区产量"="XiaoQuChanLiang","小区实收面积"="XiaoQuShiShouMianJi","含水量"="HanShuiLiang",
         "序号(stageid)"="stageid","母本(ma)"="ma","父本(pa)"="pa",
+        "重复(rp)"="rp","行数(rows)"="rows","行号(line_number)"="line_number","对照类型(is_ck)"="is_ck",
         "播种期"="BoZhongQi","出苗期"="ChuMiaoQi","出苗良否"="ChuMiaoLiangFou","苗期田间评价"="MiaoQiTianJianPingJia",
         "开花期"="KaiHuaQi","花色(HuaSe)"="HuaSe","花期田间评价"="HuaQiTianJianPingJia","叶形(YeXing)"="YeXing",
         "茸毛色(RongMaoSe)"="RongMaoSe","生长习性"="ShengZhangXiXing","结荚习性"="JieJiaXiXing",

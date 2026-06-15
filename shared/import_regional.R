@@ -43,19 +43,23 @@ is_empty_str <- function(x) {
 # 标准字段名与 FIELD_RECORD_COLS 对齐，涵盖全部 88 个性状列
 # 关键词包含 qr_trait$name_C 中文名 + 常见变体/别称
 COLUMN_KEYWORDS <- list(
-  # ===== 核心字段 =====
-  name                    = c("品种名称", "品种名", "品种"),
-  place                   = c("试验点", "试验地点", "地点名", "地点"),
-  rp                      = c("重复", "区组", "重复数"),
-  treatment               = c("处理", "处理类型", "treatment"),
+  # ===== 核心字段（英文列名优先匹配，支持 soyplant::field 结构） =====
+  fieldid                 = c("fieldid", "田间标识号", "田间识别号", "唯一编号"),
+  name                    = c("name", "品种名称", "品种名", "品种", "材料名称"),
+  place                   = c("place", "试验点", "试验地点", "地点名", "地点"),
+  rp                      = c("rp", "重复", "区组", "重复数"),
+  treatment               = c("treatment", "处理", "处理类型"),
   MuChan                  = c("亩产", "折合.*产", "产量.*亩"),
   XiaoQuChanLiang         = c("小区.*产", "小区产量", "计产"),
   XiaoQuShiShouMianJi      = c("小区实收面积", "小区面积", "面积"),
   HanShuiLiang            = c("含水量", "含水"),
-  stageid                  = c("序号", "编号"),
-  ma                      = c("母本"),
-  pa                      = c("父本"),
-  is_ck                   = c("对照类型", "是否.*对照"),
+  stageid                  = c("stageid", "序号", "编号", "阶段标识号"),
+  ma                      = c("ma", "母本"),
+  pa                      = c("pa", "父本"),
+  is_ck                   = c("is_ck", "CK", "对照类型", "是否.*对照"),
+  code                    = c("code", "编号", "品种编号", "材料编号"),
+  rows                    = c("rows", "行数", "株行数"),
+  line_number             = c("line_number", "行号", "排", "列"),
   # ===== 生育期相关 =====
   BoZhongQi               = c("播种期", "播种日期"),
   ChuMiaoQi               = c("出苗期", "出苗日期"),
@@ -270,26 +274,28 @@ SEMANTIC_ALIASES <- list(
   叶形 = c("披针形" = "1-披针", "卵圆形" = "2-卵圆", "椭圆形" = "3-椭圆"),
   茸毛色 = c("灰色" = "1-灰", "棕色" = "2-棕", "灰" = "1-灰", "棕" = "2-棕"),
   结荚习性 = c("有限结荚" = "7-有限", "无限结荚" = "3-无限",
-                "亚有限" = "5-亚有限", "有限性" = "7-有限", "无限性" = "3-无限"),
+                "亚有限" = "5-亚有限", "亚限" = "5-亚有限",
+                "有限性" = "7-有限", "无限性" = "3-无限"),
   倒伏性 = c("抗倒伏" = "1-不倒", "抗倒" = "1-不倒", "不倒伏" = "1-不倒",
               "轻倒" = "3-轻倒", "中倒" = "5-中倒", "重倒" = "7-重倒",
               "严重倒" = "9-严重倒"),
   生长习性 = c("直立型" = "1-直立", "半直立" = "3-半直立",
                 "半蔓生" = "5-半蔓生", "蔓生" = "7-蔓生"),
-  株型 = c("收敛" = "3-收敛型", "半开张" = "5-半开张", "开张" = "7-开张"),
-  落叶性 = c("不落叶" = "1-不落", "半落叶" = "2-半落", "落叶" = "3-落"),
+  株型 = c("收敛" = "3-收敛型", "半开张" = "5-半开张", "开张" = "7-开张", "开展" = "7-开张"),
+  落叶性 = c("不落叶" = "1-不落", "半落叶" = "2-半落", "落叶" = "3-落", "部分" = "2-半落"),
   裂荚性 = c("不裂" = "3-不裂", "轻裂" = "5-轻裂0-9", "中裂" = "7-中9-25", "易裂" = "9-易裂>25"),
   荚形 = c("直形" = "1-直形", "弯镰" = "2-弯镰形", "弓形" = "3-弓形"),
   荚熟色 = c("灰褐" = "1-灰褐", "黄褐" = "2-黄褐", "褐" = "3-褐",
               "深褐" = "4-深褐", "黑" = "5-黑"),
   粒型 = c("圆形" = "1-圆", "扁圆形" = "2-扁圆", "椭圆形" = "3-椭圆",
            "扁椭圆" = "4-扁椭圆", "长椭圆" = "5-长椭圆", "肾形" = "6-肾"),
-  种皮色 = c("黄色" = "1-黄色", "绿色" = "2-绿色", "黑色" = "3-黑色",
+  种皮色 = c("黄色" = "1-黄色", "深黄" = "1-黄色", "淡黄" = "1-黄色", "浓黄" = "1-黄色", "浅黄" = "1-黄色",
+              "绿色" = "2-绿色", "黑色" = "3-黑色",
               "褐色" = "4-褐色", "双色" = "5-双色"),
   脐色 = c("黄色" = "1-黄", "淡褐" = "2-淡褐", "褐" = "3-褐",
            "深褐" = "4-深褐", "蓝" = "5-蓝", "淡黑" = "6-淡黑", "黑" = "7-黑"),
   子叶色 = c("黄色" = "1-黄", "绿色" = "2-绿"),
-  种皮光泽 = c("无光" = "0-无", "微光" = "1-微", "强光" = "2-强", "无" = "0-无"),
+  种皮光泽 = c("无光" = "0-无", "微光" = "1-微", "强光" = "2-强", "无" = "0-无", "有光" = "1-微", "有" = "1-微", "光亮" = "2-强"),
   出苗良否 = c("良" = "2-优", "优" = "2-优", "中" = "0-中", "差" = "-1-差"),
   苗期田间评价 = c("良" = "2-优", "优" = "2-优", "中" = "0-中", "差" = "-1-差"),
   花期田间评价 = c("良" = "2-优", "优" = "2-优", "中" = "0-中", "差" = "-1-差"),
@@ -297,7 +303,7 @@ SEMANTIC_ALIASES <- list(
   籽粒评价 = c("良" = "2-优", "优" = "2-优", "中" = "0-中", "差" = "-1-差"),
   活秆成熟 = c("是" = "1-是", "否" = "0-否", "有" = "1-是", "无" = "0-否"),
   早衰性 = c("是" = "1-是", "否" = "0-否", "有" = "1-是", "无" = "0-否"),
-  草甘膦抗性 = c("抗" = "7-不抗", "不抗" = "7-不抗")
+  草甘膦抗性 = c("高抗" = "1-高抗", "抗" = "3-抗", "中抗" = "5-中抗", "不抗" = "7-不抗")
 )
 
 get_levels_for_trait <- function(name_lib_val) {
@@ -342,6 +348,11 @@ match_to_level <- function(raw_val, levels, aliases = NULL) {
     if (grepl(raw_str, level_texts[i], fixed = TRUE)) return(levels[i])
   }
 
+  # 4.5 通用分离/杂合状态 → 99-分离（覆盖所有有该 level 的性状）
+  if ("99-分离" %in% levels && raw_str %in% c("杂", "分离", "混合", "mixed", "seg")) {
+    return("99-分离")
+  }
+
   # 5. 如果别名表中有关键词部分匹配也接受
   if (!is.null(aliases)) {
     for (alias_name in names(aliases)) {
@@ -358,7 +369,7 @@ match_to_level <- function(raw_val, levels, aliases = NULL) {
 
 # 数值→文本转换表（国区试验分级标准）
 NUMERIC_TO_TEXT <- list(
-  DaoFuXing = c("1"="不倒", "2"="轻倒", "3"="中倒", "4"="重倒", "5"="严重倒")
+  DaoFuXing = c("0"="不倒", "1"="不倒", "2"="轻倒", "3"="中倒", "4"="重倒", "5"="严重倒")
 )
 
 standardizeQualityTraits <- function(df) {
@@ -477,13 +488,17 @@ standardizeOtherTrial <- function(raw_df, mapping, structure, metadata) {
 
   # 核心映射列
   core_cols <- list(
+    fieldid         = rep(NA_character_, n),
     name            = rep(NA_character_, n),
     place           = rep(NA_character_, n),
     MuChan          = rep(NA_real_, n),
     XiaoQuChanLiang = rep(NA_real_, n),
     XiaoQuShiShouMianJi = rep(NA_real_, n),
     stageid         = rep(NA_character_, n),
+    code            = rep(NA_character_, n),
     rp              = rep("1", n),
+    rows            = rep(NA_character_, n),
+    line_number     = rep(NA_character_, n),
     treatment       = rep(NA_character_, n),
     is_ck           = rep(0L, n),
     ma              = rep(NA_character_, n),
@@ -579,8 +594,19 @@ standardizeOtherTrial <- function(raw_df, mapping, structure, metadata) {
     }
   }
 
-  # 5. 标记CK
-  result$is_ck <- ifelse(is_ck_variety(result$name), 1L, 0L)
+  # 5. 标记CK：优先使用用户映射的 is_ck 列，否则根据品种名兜底推断
+  is_ck_mapped <- "is_ck" %in% mapping
+  if (is_ck_mapped) {
+    # 用户已映射 is_ck 列 → 尊重原始值，清洗后转整数
+    result$is_ck <- as.integer(suppressWarnings(as.numeric(result$is_ck)))
+    result$is_ck[is.na(result$is_ck)] <- 0L
+  } else {
+    # 兜底：品种名含 CK/对照字样，或 stageid 含 CK 后缀
+    ck_by_name <- is_ck_variety(result$name)
+    if (!is.null(result$stageid))
+      ck_by_name <- ck_by_name | is_ck_variety(result$stageid)
+    result$is_ck <- ifelse(ck_by_name, 1L, 0L)
+  }
 
   # 6. 质量性状标准化
   qt_result <- standardizeQualityTraits(result)
