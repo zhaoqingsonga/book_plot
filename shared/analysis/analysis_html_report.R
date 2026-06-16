@@ -358,6 +358,23 @@ build_report_screening <- function(result) {
 
   children <- list(htmltools::tags$h2("四、品种筛选"))
 
+  # 筛选摘要
+  if (!is.null(result$tables$screening_summary)) {
+    s <- result$tables$screening_summary
+    children <- c(children, list(
+      htmltools::tags$div(class = "alert alert-info",
+        style = "margin-bottom:15px; font-size:14px;",
+        htmltools::tags$strong(
+          sprintf("共 %d 个品种 → 晋级 %d 个 → 分离选单株 %d 个 → 淘汰 %d 个",
+            s$total_n, s$promoted_n, s$select_plant_n, s$eliminated_n)),
+        htmltools::tags$br(),
+        htmltools::tags$small(
+          sprintf("淘汰原因: 位次不达标 %d 个 | 分离材料 %d 个 | 倒伏排除 %d 个",
+            s$breakdown$rank_fail, s$breakdown$separated, s$breakdown$lodging))
+      )
+    ))
+  }
+
   # 晋级材料表
   if (nrow(result$tables$promoted) > 0) {
     children <- c(children, list(
@@ -366,10 +383,19 @@ build_report_screening <- function(result) {
     ))
   }
 
+  # 高产分离选单株表
+  if (!is.null(result$tables$select_plant) && nrow(result$tables$select_plant) > 0) {
+    children <- c(children, list(
+      htmltools::tags$h3("4.2 高产分离选单株"),
+      htmltools::tags$p("分离材料中位次较高者，建议选单株继续观察"),
+      df_to_html_table(result$tables$select_plant, 30)
+    ))
+  }
+
   # 淘汰材料表
   if (!is.null(result$tables$eliminated) && nrow(result$tables$eliminated) > 0) {
     children <- c(children, list(
-      htmltools::tags$h3("4.2 淘汰材料"),
+      htmltools::tags$h3("4.3 淘汰材料"),
       df_to_html_table(result$tables$eliminated, 30)
     ))
   }
@@ -377,7 +403,7 @@ build_report_screening <- function(result) {
   # 筛选前后对比图
   if (!is.null(result$plots$comparison)) {
     children <- c(children, list(
-      htmltools::tags$h3("4.3 筛选前后性状对比"),
+      htmltools::tags$h3("4.4 筛选前后性状对比"),
       ggplot_to_img(result$plots$comparison, 800, 500)
     ))
   }
@@ -386,7 +412,7 @@ build_report_screening <- function(result) {
   if (!is.null(result$plots$radar)) {
     rd <- result$plots$radar
     children <- c(children, list(
-      htmltools::tags$h3("4.4 优良品种雷达图"),
+      htmltools::tags$h3("4.5 优良品种雷达图"),
       baseplot_to_img({
         n_varieties <- nrow(rd$data) - 2
         cols <- rainbow(n_varieties)
@@ -797,6 +823,11 @@ build_markdown_report <- function(result, output_path, chart_dir = "图表", tab
       add("## 品种筛选")
       add("### 晋级材料")
       add(md_table(head(result$tables$promoted, 25)))
+      if (!is.null(result$tables$select_plant) && nrow(result$tables$select_plant) > 0) {
+        add("### 高产分离选单株")
+        add("分离材料中位次较高者，建议选单株继续观察")
+        add(md_table(head(result$tables$select_plant, 20)))
+      }
       if (!is.null(result$tables$eliminated) && nrow(result$tables$eliminated) > 0) {
         add("### 淘汰材料")
         add(md_table(head(result$tables$eliminated, 30))); br()

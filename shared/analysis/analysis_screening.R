@@ -6,40 +6,60 @@
 
 #' 品种筛选分析
 #'
-#' 根据位次阈值、倒伏性等级筛选晋级和淘汰材料，生成对比图表和雷达图。
+#' 根据位次阈值、倒伏性等级筛选晋级、高产分离选单株和淘汰材料，
+#' 生成对比图表和雷达图。
 #'
 #' @param df 数据框（拼音列名）
-#' @param rank_threshold 位次阈值，默认 60
+#' @param rank_threshold_select 晋级材料位次阈值，默认 60
+#' @param rank_threshold_plant 分离选单株位次阈值，默认 60
 #' @param exclude_lodging 排除的倒伏性等级，NULL 表示不排除
-#' @return list(promoted, eliminated, comparison_plot, radar_plot)
+#' @param keep_eliminated_vector 手动保留的阶段（不淘汰），NULL 表示无
+#' @param keep_not_select_vector 手动保留的阶段（不进入分离选单株），NULL 表示无
+#' @param place 按地点筛选，NULL 表示全部
+#' @param radar_top_n 雷达图品种数
+#' @param radar_selected_names 手动指定雷达图品种
+#' @return list(promoted, select_plant, eliminated, comparison_plot, radar_plot, summary)
 #' @export
-analyze_screening <- function(df, rank_threshold = 60,
+analyze_screening <- function(df,
+                               rank_threshold_select = 60,
+                               rank_threshold_plant = 60,
                                exclude_lodging = c("9-严重倒", "7-重倒"),
+                               keep_eliminated_vector = NULL,
+                               keep_not_select_vector = NULL,
+                               place = NULL,
                                radar_top_n = 5,
                                radar_selected_names = NULL) {
   rdf <- adapt_to_reference(df)
+
+  # 地点过滤
+  if (!is.null(place) && "地点" %in% colnames(rdf)) {
+    rdf <- rdf[rdf[["地点"]] == place, ]
+  }
 
   # 检查必需的位次列
   rank_cols <- intersect(c("较临近对照位次", "较平均对照位次"), colnames(rdf))
   if (length(rank_cols) == 0) {
     return(list(
-      promoted = data.frame(),
-      eliminated = data.frame(),
+      promoted     = data.frame(),
+      select_plant = data.frame(),
+      eliminated   = data.frame(),
       comparison_plot = NULL,
-      radar_plot = NULL,
+      radar_plot      = NULL,
+      summary      = list(total_n = 0L, promoted_n = 0L,
+        select_plant_n = 0L, eliminated_n = 0L, breakdown = list()),
       message = "缺少位次筛选字段，无法进行品种筛选。"
     ))
   }
 
-  # 非分离材料（不包含"分离"关键词）
+  # ===== 1. 晋级材料（非分离 + 位次达标） =====
   promoted <- rdf
   if ("阶段名称" %in% colnames(promoted)) {
     promoted <- promoted[!grepl("分离", as.character(promoted[["阶段名称"]])), ]
   }
 
-  # 位次筛选
+  # 位次筛选（两个位次字段都存在时用 AND 逻辑）
   for (rc in rank_cols) {
-    promoted <- promoted[!is.na(promoted[[rc]]) & promoted[[rc]] <= rank_threshold, ]
+    promoted <- promoted[!is.na(promoted[[rc]]) & promoted[[rc]] <= rank_threshold_select, ]
   }
 
   # 倒伏性排除
@@ -49,45 +69,79 @@ analyze_screening <- function(df, rank_threshold = 60,
     }
   }
 
-  # 淘汰材料
-  promoted_names <- if ("品种名称" %in% colnames(promoted)) promoted[["品种名称"]] else character(0)
-  eliminated <- rdf
-  if ("品种名称" %in% colnames(eliminated) && length(promoted_names) > 0) {
-    eliminated <- eliminated[!eliminated[["品种名称"]] %in% promoted_names, ]
+  # 手动保留（不淘汰）
+  if (!is.null(keep_eliminated_vector) && "阶段名称" %in% colnames(promoted)) {
+    promoted <- promoted[!promoted[["阶段名称"]] %in% keep_eliminated_vector, ]
   }
 
-  # 计算淘汰原因（在转拼音前，列名是中文）
+  # ===== 2. 高产分离选单株（含"分离" + 位次 < 阈值） =====
+  select_plant <- rdf
+  if ("阶段名称" %in% colnames(select_plant)) {
+    select_plant <- select_plant[grepl("分离", as.character(select_plant[["阶段名称"]])), ]
+  }
+
+  # 位次筛选（严格小于）
+  for (rc in rank_cols) {
+    select_plant <- select_plant[!is.na(select_plant[[rc]]) & select_plant[[rc]] < rank_threshold_plant, ]
+  }
+
+  # 倒伏性排除
+  if (!is.null(exclude_lodging) && "倒伏性" %in% colnames(select_plant)) {
+    for (lv in exclude_lodging) {
+      select_plant <- select_plant[select_plant[["倒伏性"]] != lv | is.na(select_plant[["倒伏性"]]), ]
+    }
+  }
+
+  # 手动保留（不进入分离选单株）
+  if (!is.null(keep_not_select_vector) && "阶段名称" %in% colnames(select_plant)) {
+    select_plant <- select_plant[!select_plant[["阶段名称"]] %in% keep_not_select_vector, ]
+  }
+
+  # ===== 3. 淘汰材料（阶段名称不在晋级和分离材料中） =====
+  promoted_stages <- if ("阶段名称" %in% colnames(promoted)) unique(promoted[["阶段名称"]]) else character(0)
+  plant_stages    <- if ("阶段名称" %in% colnames(select_plant)) unique(select_plant[["阶段名称"]]) else character(0)
+  retained_stages <- union(promoted_stages, plant_stages)
+
+  eliminated <- rdf
+  if ("阶段名称" %in% colnames(eliminated) && length(retained_stages) > 0) {
+    eliminated <- eliminated[!eliminated[["阶段名称"]] %in% retained_stages, ]
+  }
+
+  # 计算淘汰原因
   if (nrow(eliminated) > 0) {
     eliminated$淘汰原因 <- compute_elimination_reasons(eliminated, rank_cols,
-      rank_threshold, exclude_lodging)
+      rank_threshold_select, exclude_lodging)
   }
 
-  # 筛选摘要
+  # ===== 4. 筛选摘要 =====
   summary <- list(
-    total_n      = nrow(rdf),
-    promoted_n   = nrow(promoted),
-    eliminated_n = nrow(eliminated),
-    breakdown    = list(
-      rank_fail = if (nrow(eliminated) > 0 && "淘汰原因" %in% colnames(eliminated))
+    total_n         = nrow(rdf),
+    promoted_n      = nrow(promoted),
+    select_plant_n  = nrow(select_plant),
+    eliminated_n    = nrow(eliminated),
+    breakdown       = list(
+      rank_fail  = if (nrow(eliminated) > 0 && "淘汰原因" %in% colnames(eliminated))
         sum(grepl("位次不达标", eliminated$淘汰原因)) else 0L,
-      separated = if (nrow(eliminated) > 0 && "淘汰原因" %in% colnames(eliminated))
+      separated  = if (nrow(eliminated) > 0 && "淘汰原因" %in% colnames(eliminated))
         sum(grepl("分离材料", eliminated$淘汰原因)) else 0L,
-      lodging   = if (nrow(eliminated) > 0 && "淘汰原因" %in% colnames(eliminated))
+      lodging    = if (nrow(eliminated) > 0 && "淘汰原因" %in% colnames(eliminated))
         sum(grepl("倒伏", eliminated$淘汰原因)) else 0L
     )
   )
 
-  # 转回拼音列名
-  promoted_py <- adapt_to_pinyin(promoted)
-  eliminated_py <- adapt_to_pinyin(eliminated)
+  # ===== 5. 转回拼音列名 =====
+  promoted_py     <- adapt_to_pinyin(promoted)
+  select_plant_py <- adapt_to_pinyin(select_plant)
+  eliminated_py   <- adapt_to_pinyin(eliminated)
 
   # 亩产保留两位小数
-  if ("MuChan" %in% colnames(promoted_py))
-    promoted_py$MuChan <- round(promoted_py$MuChan, 2)
-  if ("MuChan" %in% colnames(eliminated_py))
-    eliminated_py$MuChan <- round(eliminated_py$MuChan, 2)
+  for (tbl in list(promoted_py, select_plant_py, eliminated_py)) {
+    if ("MuChan" %in% colnames(tbl))
+      tbl$MuChan <- round(tbl$MuChan, 2)
+  }
 
-  # 筛选前后对比图
+  # ===== 6. 可视化 =====
+  # 筛选前后对比图（晋级 vs 淘汰 vs 对照）
   comparison_plot <- tryCatch({
     plot_selection_comparison(rdf, promoted)
   }, error = function(e) NULL)
@@ -102,6 +156,7 @@ analyze_screening <- function(df, rank_threshold = 60,
 
   list(
     promoted        = promoted_py,
+    select_plant    = select_plant_py,
     eliminated      = eliminated_py,
     comparison_plot = comparison_plot,
     radar_plot      = radar_plot,
@@ -234,13 +289,19 @@ compute_elimination_reasons <- function(eliminated, rank_cols, rank_threshold, e
 
 #' 品种筛选控制面板 UI
 #' @export
-screening_controls_ui <- function(ns, rank_threshold = 60, radar_top_n = 5) {
+screening_controls_ui <- function(ns,
+                                   rank_threshold_select = 60,
+                                   rank_threshold_plant = 60,
+                                   radar_top_n = 5,
+                                   id_prefix = "") {
   fluidRow(
-    column(4, sliderInput(ns("scr_rank_threshold"), "位次阈值",
-      min = 1, max = 100, value = rank_threshold, step = 1, post = "%")),
-    column(4, numericInput(ns("scr_radar_top_n"), "雷达图品种数",
+    column(3, sliderInput(ns(paste0(id_prefix, "scr_rank_threshold_select")), "晋级位次阈值",
+      min = 1, max = 100, value = rank_threshold_select, step = 1, post = "%")),
+    column(3, sliderInput(ns(paste0(id_prefix, "scr_rank_threshold_plant")), "分离选单株位次阈值",
+      min = 1, max = 100, value = rank_threshold_plant, step = 1, post = "%")),
+    column(3, numericInput(ns(paste0(id_prefix, "scr_radar_top_n")), "雷达图品种数",
       value = radar_top_n, min = 2, max = 20, step = 1)),
-    column(4, checkboxGroupInput(ns("scr_exclude_lodging"), "排除倒伏等级",
+    column(3, checkboxGroupInput(ns(paste0(id_prefix, "scr_exclude_lodging")), "排除倒伏等级",
       choices  = c("1-不倒", "3-轻倒", "5-中倒", "7-重倒", "9-严重倒"),
       selected = c("9-严重倒", "7-重倒"),
       inline   = TRUE))
@@ -252,8 +313,9 @@ screening_controls_ui <- function(ns, rank_threshold = 60, radar_top_n = 5) {
 build_screening_summary_ui <- function(summary) {
   if (is.null(summary) || summary$total_n == 0) return(NULL)
   div(class = "alert alert-info", style = "margin-bottom:15px;",
-    tags$strong(sprintf("共 %d 个品种 → 晋级 %d 个 → 淘汰 %d 个",
-      summary$total_n, summary$promoted_n, summary$eliminated_n)),
+    tags$strong(sprintf("共 %d 个品种 → 晋级 %d 个 → 分离选单株 %d 个 → 淘汰 %d 个",
+      summary$total_n, summary$promoted_n,
+      summary$select_plant_n, summary$eliminated_n)),
     tags$br(),
     tags$small(
       "淘汰原因明细: ",

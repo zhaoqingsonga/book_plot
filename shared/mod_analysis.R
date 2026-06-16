@@ -105,7 +105,7 @@ compute_derived_yield_columns <- function(df) {
 # 3. 产比分析路由（单点和多点合并 — 多点时两种分析都做）
 # ==============================================================================
 
-run_yield_test_analysis <- function(df, trial_info, has_traits) {
+run_yield_test_analysis <- function(df, trial_info, has_traits, screening_params = NULL) {
   tables  <- list()
   plots   <- list()
   per_site_plots   <- NULL
@@ -147,12 +147,20 @@ run_yield_test_analysis <- function(df, trial_info, has_traits) {
   }
 
   # 品种筛选/雷达/评述（需要性状数据提供位次列，不依赖多重复）
-  scr <- tryCatch(analyze_screening(df), error = function(e) {
+  scr <- tryCatch({
+    if (is.null(screening_params)) {
+      analyze_screening(df)
+    } else {
+      do.call(analyze_screening, c(list(df = df), screening_params))
+    }
+  }, error = function(e) {
     messages <<- c(messages, paste("品种筛选失败:", e$message)); NULL })
   if (!is.null(scr)) {
     if (!is.null(scr$message)) messages <- c(messages, scr$message)
-    tables$promoted   <- scr$promoted
-    tables$eliminated <- scr$eliminated
+    tables$promoted          <- scr$promoted
+    tables$select_plant      <- scr$select_plant
+    tables$eliminated        <- scr$eliminated
+    tables$screening_summary <- scr$summary
     plots$comparison  <- scr$comparison_plot
     plots$radar       <- scr$radar_plot
     if (nrow(scr$promoted) > 0) {

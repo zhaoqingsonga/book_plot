@@ -609,6 +609,21 @@ yield_test_server <- function(id) {
       })
     })
 
+    # ---- 筛选参数交互式重算（不重跑全管道） ----
+    screening_result <- reactive({
+      req(rv$view_data)
+      params <- list(
+        rank_threshold_select = if (is.null(input$scr_rank_threshold_select)) 60 else input$scr_rank_threshold_select,
+        rank_threshold_plant   = if (is.null(input$scr_rank_threshold_plant)) 60 else input$scr_rank_threshold_plant,
+        exclude_lodging        = if (is.null(input$scr_exclude_lodging)) c("9-严重倒", "7-重倒") else input$scr_exclude_lodging,
+        radar_top_n            = if (is.null(input$scr_radar_top_n)) 5 else input$scr_radar_top_n
+      )
+      tryCatch(
+        do.call(analyze_screening, c(list(df = rv$view_data), params)),
+        error = function(e) NULL
+      )
+    })
+
     output$analysis_modal_body <- renderUI({
       req(rv$analysis_result)
       result <- rv$analysis_result
@@ -782,20 +797,78 @@ yield_test_server <- function(id) {
 
       # === Screening Tab ===
       if (!is.null(result$tables$promoted)) {
-        tabs$screening <- tabPanel("品种筛选", icon = icon("filter"),
-          div(class = "p-3",
-            tags$h5("晋级材料"),
-            renderDataTable({DT::datatable(result$tables$promoted,
-              options = list(pageLength = 10, scrollX = TRUE, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'),
-              rownames = FALSE, class = "compact")}),
-            if (!is.null(result$plots$comparison)) tagList(
+        scr_content <- tagList(
+          # 筛选控件
+          tags$div(class = "card bg-light mb-3",
+            tags$div(class = "card-body py-2",
+              tags$h6(class = "card-title mb-2", "调整筛选参数（实时更新，无需重新分析）"),
+              screening_controls_ui(ns)
+            )
+          ),
+          # 筛选摘要
+          uiOutput(ns("screening_summary_ui")),
+          tags$h5("晋级材料"),
+          renderDataTable({DT::datatable(screening_result()$promoted,
+            options = list(pageLength = 10, scrollX = TRUE, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'),
+            rownames = FALSE, class = "compact")})
+        )
+
+        output$screening_summary_ui <- renderUI({
+          req(screening_result())
+          build_screening_summary_ui(screening_result()$summary)
+        })
+
+        # 分离选单株
+        output$screening_select_plant_ui <- renderUI({
+          req(screening_result())
+          sp <- screening_result()$select_plant
+          if (!is.null(sp) && nrow(sp) > 0) {
+            tagList(
+              tags$hr(), tags$h5("高产分离选单株"),
+              tags$p(class = "text-muted small",
+                "分离材料中位次较高者，建议选单株继续观察"),
+              renderDataTable({DT::datatable(sp,
+                options = list(pageLength = 10, scrollX = TRUE, lengthMenu = c(5, 10, 15, 20, 25, 50),
+                  dom = 'lftip'), rownames = FALSE, class = "compact")})
+            )
+          }
+        })
+
+        # 淘汰材料
+        output$screening_eliminated_ui <- renderUI({
+          req(screening_result())
+          el <- screening_result()$eliminated
+          if (!is.null(el) && nrow(el) > 0) {
+            tagList(
+              tags$hr(), tags$h5("淘汰材料"),
+              tags$p(class = "text-muted small",
+                "淘汰原因列显示位次不达标（含具体位次值）、分离材料、倒伏排除等淘汰理由"),
+              renderDataTable({DT::datatable(el,
+                options = list(pageLength = 10, scrollX = TRUE, lengthMenu = c(5, 10, 15, 20, 25, 50),
+                  dom = 'lftip'), rownames = FALSE, class = "compact")})
+            )
+          }
+        })
+
+        # 筛选前后对比图
+        output$screening_comparison_ui <- renderUI({
+          req(screening_result())
+          if (!is.null(screening_result()$comparison_plot)) {
+            tagList(
               tags$hr(), tags$h5("筛选前后性状对比"),
-              renderPlot({ result$plots$comparison }, height = 500)
-            ),
-            if (!is.null(result$plots$radar)) tagList(
+              renderPlot({ screening_result()$comparison_plot }, height = 500)
+            )
+          }
+        })
+
+        # 雷达图
+        output$screening_radar_ui <- renderUI({
+          req(screening_result())
+          rd <- screening_result()$radar_plot
+          if (!is.null(rd)) {
+            tagList(
               tags$hr(), tags$h5("优良品种雷达图"),
               renderPlot({
-                rd <- result$plots$radar
                 req(rd)
                 n_varieties <- nrow(rd$data) - 2L
                 colors <- rainbow(n_varieties)
@@ -807,14 +880,25 @@ yield_test_server <- function(id) {
                 legend(x = "bottomright", legend = rd$names,
                   col = colors, lwd = 2, cex = 0.9, bty = "n")
               }, height = 500)
-            ),
-            if (!is.null(result$tables$description)) tagList(
-              tags$hr(), tags$h5("晋级材料综合性状描述"),
-              tags$pre(class = "bg-light p-3",
-                style = "max-height:300px;overflow-y:auto;white-space:pre-wrap;font-size:13px;",
-                result$tables$description)
             )
+          }
+        })
+
+        scr_content <- tagList(scr_content,
+          uiOutput(ns("screening_select_plant_ui")),
+          uiOutput(ns("screening_eliminated_ui")),
+          uiOutput(ns("screening_comparison_ui")),
+          uiOutput(ns("screening_radar_ui")),
+          if (!is.null(result$tables$description)) tagList(
+            tags$hr(), tags$h5("晋级材料综合性状描述"),
+            tags$pre(class = "bg-light p-3",
+              style = "max-height:300px;overflow-y:auto;white-space:pre-wrap;font-size:13px;",
+              result$tables$description)
           )
+        )
+
+        tabs$screening <- tabPanel("品种筛选", icon = icon("filter"),
+          div(class = "p-3", scr_content)
         )
       }
 
