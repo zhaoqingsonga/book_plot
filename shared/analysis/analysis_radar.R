@@ -31,6 +31,9 @@ plot_radar_top <- function(df, top_n = 5) {
       dplyr::across(dplyr::any_of("stageid"), ~ dplyr::first(.x)),
       .groups = "drop"
     ) %>%
+    dplyr::filter(dplyr::if_all(
+      dplyr::where(is.numeric), ~ !is.na(.x)
+    )) %>%
     dplyr::arrange(dplyr::desc(MuChan)) %>%
     dplyr::slice_head(n = top_n)
 
