@@ -643,25 +643,25 @@ yield_test_server <- function(id) {
           div(class = "p-3",
             tags$h5("产量核心统计"),
             renderDataTable({DT::datatable(result$tables$yield_stats,
-              options = list(dom = 't', pageLength = 5), rownames = FALSE, class = "compact")}),
+              options = list(pageLength = 5, lengthMenu = c(5, 10, 15, 20, 25), dom = 'lftip'), rownames = FALSE, class = "compact")}),
             # === 分地点产量核心统计（多地点时显示） ===
             if (isTRUE(trial_info$is_multi_site) &&
                 !is.null(result$tables$per_site_yield_stats)) {
               tagList(
                 tags$hr(), tags$h5("分地点产量核心统计"),
                 renderDataTable({DT::datatable(result$tables$per_site_yield_stats,
-                  options = list(dom = 't', pageLength = length(trial_info$places)),
+                  options = list(pageLength = length(trial_info$places), lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'),
                   rownames = FALSE, class = "compact")}),
                 if (!is.null(result$tables$per_site_growth_stats)) tagList(
                   tags$h5("分地点生育期统计", style = "margin-top:15px;"),
                   renderDataTable({DT::datatable(result$tables$per_site_growth_stats,
-                    options = list(dom = 't', pageLength = length(trial_info$places)),
+                    options = list(pageLength = length(trial_info$places), lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'),
                     rownames = FALSE, class = "compact")})
                 ),
                 if (!is.null(result$tables$per_site_increase_stats)) tagList(
                   tags$h5("分地点增产统计", style = "margin-top:15px;"),
                   renderDataTable({DT::datatable(result$tables$per_site_increase_stats,
-                    options = list(dom = 't', pageLength = length(trial_info$places)),
+                    options = list(pageLength = length(trial_info$places), lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'),
                     rownames = FALSE, class = "compact")})
                 )
               )
@@ -726,13 +726,13 @@ yield_test_server <- function(id) {
             ),
             tags$hr(), tags$h5("产量排名"),
             renderDataTable({DT::datatable(result$tables$yield_ranking,
-              options = list(pageLength = 10, scrollX = TRUE, dom = 'ftip'),
+              options = list(pageLength = 10, scrollX = TRUE, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'),
               rownames = FALSE, class = "compact")}),
             # === 各地点的平均（多地点时按品种跨地点汇总） ===
             if (!is.null(result$tables$cross_location_avg)) tagList(
               tags$hr(), tags$h5("各地点的平均"),
               renderDataTable({DT::datatable(result$tables$cross_location_avg,
-                options = list(pageLength = 15, scrollX = TRUE, dom = 'ftip'),
+                options = list(pageLength = 15, scrollX = TRUE, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'),
                 rownames = FALSE, class = "compact")})
             )
           )
@@ -786,7 +786,7 @@ yield_test_server <- function(id) {
           div(class = "p-3",
             tags$h5("晋级材料"),
             renderDataTable({DT::datatable(result$tables$promoted,
-              options = list(pageLength = 10, scrollX = TRUE, dom = 'ftip'),
+              options = list(pageLength = 10, scrollX = TRUE, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'),
               rownames = FALSE, class = "compact")}),
             if (!is.null(result$plots$comparison)) tagList(
               tags$hr(), tags$h5("筛选前后性状对比"),
@@ -824,10 +824,10 @@ yield_test_server <- function(id) {
           div(class = "p-3",
             tags$h5("优良亲本"),
             renderDataTable({DT::datatable(result$tables$parent_stats,
-              options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+              options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")}),
             tags$hr(), tags$h5("优良组合"),
             renderDataTable({DT::datatable(result$tables$cross_stats,
-              options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+              options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")}),
             if (!is.null(result$plots$parent_plot)) tagList(
               tags$hr(), renderPlot({ result$plots$parent_plot }, height = 600)
             )
@@ -850,12 +850,12 @@ yield_test_server <- function(id) {
             if (!is.null(result$tables$gge_stable) && nrow(result$tables$gge_stable) > 0) tagList(
               tags$hr(), tags$h5("高产稳定基因型"),
               renderDataTable({DT::datatable(result$tables$gge_stable,
-                options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")})
+                options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")})
             ),
             if (!is.null(result$tables$gge_unstable) && nrow(result$tables$gge_unstable) > 0) tagList(
               tags$hr(), tags$h5("高产不稳基因型（需关注）"),
               renderDataTable({DT::datatable(result$tables$gge_unstable,
-                options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")})
+                options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")})
             )
           )
         )
@@ -884,7 +884,7 @@ yield_test_server <- function(id) {
         tabs$cross_site <- tabPanel("跨地点排名", icon = icon("map-marked-alt"),
           div(class = "p-3", tags$h5("跨地点产量排名"),
             renderDataTable({DT::datatable(result$tables$cross_site_ranking,
-              options = list(pageLength = 10, scrollX = TRUE, dom = 'ftip'),
+              options = list(pageLength = 10, scrollX = TRUE, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'),
               rownames = FALSE, class = "compact")})
           )
         )

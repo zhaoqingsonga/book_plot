@@ -29,21 +29,21 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     yc <- tagList(
       tags$h5("产量核心统计"),
       DT::renderDataTable({DT::datatable(result$tables$yield_stats,
-        options=list(dom='t',pageLength=5), rownames=FALSE, class="compact")}))
+        options=list(pageLength=5,lengthMenu=c(5,10,15,20,25),dom='lftip'), rownames=FALSE, class="compact")}))
 
     if (isTRUE(ti$is_multi_site)) {
       if (!is.null(result$tables$per_site_yield_stats))
         yc <- tagList(yc, tags$hr(), tags$h5("分地点产量核心统计"),
           DT::renderDataTable({DT::datatable(result$tables$per_site_yield_stats,
-            options=list(dom='t',pageLength=length(ti$places)), rownames=FALSE, class="compact")}))
+            options=list(pageLength=length(ti$places),lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}))
       if (!is.null(result$tables$per_site_growth_stats))
         yc <- tagList(yc, tags$h5("分地点生育期统计", style="margin-top:15px;"),
           DT::renderDataTable({DT::datatable(result$tables$per_site_growth_stats,
-            options=list(dom='t',pageLength=length(ti$places)), rownames=FALSE, class="compact")}))
+            options=list(pageLength=length(ti$places),lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}))
       if (!is.null(result$tables$per_site_increase_stats))
         yc <- tagList(yc, tags$h5("分地点增产统计", style="margin-top:15px;"),
           DT::renderDataTable({DT::datatable(result$tables$per_site_increase_stats,
-            options=list(dom='t',pageLength=length(ti$places)), rownames=FALSE, class="compact")}))
+            options=list(pageLength=length(ti$places),lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}))
     }
 
     yc <- tagList(yc,
@@ -88,11 +88,11 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     yc <- tagList(yc,
       tags$hr(), tags$h5("产量排名"),
       DT::renderDataTable({DT::datatable(result$tables$yield_ranking,
-        options=list(pageLength=10,scrollX=TRUE,dom='tip'), rownames=FALSE, class="compact")}))
+        options=list(pageLength=10,scrollX=TRUE,lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}))
     if (!is.null(result$tables$cross_location_avg))
       yc <- tagList(yc, tags$hr(), tags$h5("各地点的平均"),
         DT::renderDataTable({DT::datatable(result$tables$cross_location_avg,
-          options=list(pageLength=15,scrollX=TRUE,dom='tip'), rownames=FALSE, class="compact")}))
+          options=list(pageLength=15,scrollX=TRUE,lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}))
 
     tabs$yield <- tabPanel("产量概览", icon=icon("chart-bar"), div(class="p-3", yc))
   }
@@ -135,7 +135,7 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     sc <- tagList(
       tags$h5("晋级材料"),
       DT::renderDataTable({DT::datatable(result$tables$promoted,
-        options=list(pageLength=10,scrollX=TRUE,dom='tip'), rownames=FALSE, class="compact")}))
+        options=list(pageLength=10,scrollX=TRUE,lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}))
     if (!is.null(result$plots$comparison))
       sc <- tagList(sc, tags$hr(), tags$h5("筛选前后性状对比"), renderPlot({result$plots$comparison}, height=500))
     if (!is.null(result$plots$radar))
@@ -156,10 +156,10 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     pc <- tagList(
       tags$h5("优良亲本"),
       DT::renderDataTable({DT::datatable(result$tables$parent_stats,
-        options=list(pageLength=10,dom='tip'), rownames=FALSE, class="compact")}),
+        options=list(pageLength=10,lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}),
       tags$hr(), tags$h5("优良组合"),
       DT::renderDataTable({DT::datatable(result$tables$cross_stats,
-        options=list(pageLength=10,dom='tip'), rownames=FALSE, class="compact")}))
+        options=list(pageLength=10,lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}))
     if (!is.null(result$plots$parent_plot))
       pc <- tagList(pc, tags$hr(), renderPlot({result$plots$parent_plot}, height=600))
     tabs$parent <- tabPanel("亲本分析", icon=icon("venus-mars"), div(class="p-3", pc))
@@ -178,11 +178,11 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     if (!is.null(result$tables$gge_stable) && nrow(result$tables$gge_stable)>0)
       gc <- tagList(gc, tags$hr(), tags$h5("高产稳定基因型"),
         DT::renderDataTable({DT::datatable(result$tables$gge_stable,
-          options=list(pageLength=10,dom='tip'), rownames=FALSE, class="compact")}))
+          options=list(pageLength=10,lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}))
     if (!is.null(result$tables$gge_unstable) && nrow(result$tables$gge_unstable)>0)
       gc <- tagList(gc, tags$hr(), tags$h5("高产不稳基因型（需关注）"),
         DT::renderDataTable({DT::datatable(result$tables$gge_unstable,
-          options=list(pageLength=10,dom='tip'), rownames=FALSE, class="compact")}))
+          options=list(pageLength=10,lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")}))
     tabs$gge <- tabPanel("GGE分析", icon=icon("globe"), div(class="p-3", gc))
   }
 
@@ -201,7 +201,7 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     tabs$cross_site <- tabPanel("跨地点排名", icon=icon("map-marked-alt"), div(class="p-3",
       tags$h5("跨地点产量排名"),
       DT::renderDataTable({DT::datatable(result$tables$cross_site_ranking,
-        options=list(pageLength=10,scrollX=TRUE,dom='tip'), rownames=FALSE, class="compact")})))
+        options=list(pageLength=10,scrollX=TRUE,lengthMenu=c(5,10,15,20,25,50),dom='lftip'), rownames=FALSE, class="compact")})))
 
   # ===== Export =====
   tabs$export <- tabPanel("导出", icon=icon("download"), div(class="p-3",

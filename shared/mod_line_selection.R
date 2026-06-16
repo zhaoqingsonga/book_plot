@@ -631,14 +631,14 @@ line_selection_server <- function(id) {
           div(class = "p-3",
             tags$h5("选择统计"),
             renderDataTable({DT::datatable(result$tables$sele_overview,
-              options = list(dom = 't'), rownames = FALSE, class = "compact")}),
+              options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")}),
             if (!is.null(result$plots$sele_dist_chart)) tagList(
               tags$hr(), renderPlot({ result$plots$sele_dist_chart }, height = 350)
             ),
             if (!is.null(result$tables$sele_dist)) tagList(
               tags$hr(), tags$h5("选择数分布明细"),
               renderDataTable({DT::datatable(result$tables$sele_dist,
-                options = list(dom = 't', pageLength = 10), rownames = FALSE, class = "compact")})
+                options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")})
             )
           )
         )
@@ -649,7 +649,7 @@ line_selection_server <- function(id) {
           div(class = "p-3",
             tags$h5("每材料后代行数 Top 20"),
             renderDataTable({DT::datatable(result$tables$progeny_top,
-              options = list(pageLength = 20, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+              options = list(pageLength = 20, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")}),
             if (!is.null(result$plots$progeny_chart)) tagList(
               tags$hr(), renderPlot({ result$plots$progeny_chart }, height = 400)
             )
@@ -662,7 +662,7 @@ line_selection_server <- function(id) {
           div(class = "p-3",
             tags$h5("形态性状统计"),
             renderDataTable({DT::datatable(result$tables$morph_stats,
-              options = list(dom = 't', pageLength = 10), rownames = FALSE, class = "compact")})
+              options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")})
           )
         )
       }

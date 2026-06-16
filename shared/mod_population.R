@@ -611,13 +611,13 @@ population_server <- function(id) {
           div(class = "p-3",
             tags$h5("世代分布"),
             renderDataTable({DT::datatable(result$tables$gen_dist,
-              options = list(dom = 't', pageLength = 10), rownames = FALSE, class = "compact")}),
+              options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")}),
             if (!is.null(result$plots$gen_dist_chart)) tagList(
               tags$hr(), renderPlot({ result$plots$gen_dist_chart }, height = 350)
             ),
             tags$hr(), tags$h5("世代晋级追踪"),
             renderDataTable({DT::datatable(result$tables$gen_track,
-              options = list(pageLength = 10, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+              options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")}),
             if (!is.null(result$plots$gen_track_chart)) tagList(
               tags$hr(), renderPlot({ result$plots$gen_track_chart }, height = 350)
             )
@@ -630,7 +630,7 @@ population_server <- function(id) {
           div(class = "p-3",
             tags$h5("亲本组合 Top 20"),
             renderDataTable({DT::datatable(result$tables$cross_top,
-              options = list(pageLength = 20, dom = 'ftip'), rownames = FALSE, class = "compact")}),
+              options = list(pageLength = 20, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")}),
             if (!is.null(result$plots$cross_chart)) tagList(
               tags$hr(), renderPlot({ result$plots$cross_chart }, height = 500)
             )
@@ -643,7 +643,7 @@ population_server <- function(id) {
           div(class = "p-3",
             tags$h5("核心性状统计"),
             renderDataTable({DT::datatable(result$tables$trait_overview,
-              options = list(dom = 't', pageLength = 10), rownames = FALSE, class = "compact")})
+              options = list(pageLength = 10, lengthMenu = c(5, 10, 15, 20, 25, 50), dom = 'lftip'), rownames = FALSE, class = "compact")})
           )
         )
       }
