@@ -10,7 +10,7 @@
 #' @param top_n 展示前 N 个高产品种，默认 5
 #' @return 雷达图（fmsb基础图，在renderPlot中直接调用）
 #' @export
-plot_radar_top <- function(df, top_n = 5) {
+plot_radar_top <- function(df, top_n = 5, selected_names = NULL) {
   if (!requireNamespace("fmsb", quietly = TRUE) ||
       !requireNamespace("scales", quietly = TRUE) ||
       !requireNamespace("dplyr", quietly = TRUE) ||
@@ -33,9 +33,17 @@ plot_radar_top <- function(df, top_n = 5) {
     ) %>%
     dplyr::filter(dplyr::if_all(
       dplyr::where(is.numeric), ~ !is.na(.x)
-    )) %>%
-    dplyr::arrange(dplyr::desc(MuChan)) %>%
-    dplyr::slice_head(n = top_n)
+    ))
+
+  # 手动指定品种 或 自动取 top_n
+  if (!is.null(selected_names) && length(selected_names) > 0 && "name" %in% colnames(radar_data)) {
+    radar_data <- radar_data %>%
+      dplyr::filter(name %in% selected_names)
+  } else {
+    radar_data <- radar_data %>%
+      dplyr::arrange(dplyr::desc(MuChan)) %>%
+      dplyr::slice_head(n = top_n)
+  }
 
   if (nrow(radar_data) < 1) return(NULL)
 
