@@ -597,8 +597,11 @@ standardizeOtherTrial <- function(raw_df, mapping, structure, metadata) {
   # 5. 标记CK：优先使用用户映射的 is_ck 列，否则根据品种名兜底推断
   is_ck_mapped <- "is_ck" %in% mapping
   if (is_ck_mapped) {
-    # 用户已映射 is_ck 列 → 尊重原始值，清洗后转整数
-    result$is_ck <- as.integer(suppressWarnings(as.numeric(result$is_ck)))
+    # 用户已映射 is_ck 列 → 识别文本/数字标记后转整数
+    ck_vals <- as.character(result$is_ck)
+    ck_text <- grepl("CK|对照|check|是|Y|yes|true|TRUE", ck_vals, ignore.case = TRUE)
+    ck_vals[ck_text] <- "1"
+    result$is_ck <- as.integer(suppressWarnings(as.numeric(ck_vals)))
     result$is_ck[is.na(result$is_ck)] <- 0L
   } else {
     # 兜底：品种名含 CK/对照字样，或 stageid 含 CK 后缀

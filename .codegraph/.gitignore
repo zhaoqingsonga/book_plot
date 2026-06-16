@@ -1,0 +1,19 @@
+# CodeGraph data files
+# These are local to each machine and should not be committed
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Local config may contain provider API keys
+config.json
+
+# Cache
+cache/
+
+# Logs
+*.log
+
+# Hook markers
+.dirty
