@@ -135,6 +135,8 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
     # 交互式筛选（不重跑全管道）
     other_screening_result <- reactive({
       req(df)
+      df_derived <- tryCatch(compute_derived_yield_columns(df),
+        error = function(e) df)
       params <- list(
         rank_threshold_select = if (is.null(input$other_scr_rank_threshold_select)) 60 else input$other_scr_rank_threshold_select,
         rank_threshold_plant   = if (is.null(input$other_scr_rank_threshold_plant)) 60 else input$other_scr_rank_threshold_plant,
@@ -142,7 +144,7 @@ other_analysis_show_ui <- function(df, trial_name, ns, input, output) {
         radar_top_n            = if (is.null(input$other_scr_radar_top_n)) 5 else input$other_scr_radar_top_n
       )
       tryCatch(
-        do.call(analyze_screening, c(list(df = df), params)),
+        do.call(analyze_screening, c(list(df = df_derived), params)),
         error = function(e) NULL
       )
     })

@@ -612,6 +612,8 @@ yield_test_server <- function(id) {
     # ---- 筛选参数交互式重算（不重跑全管道） ----
     screening_result <- reactive({
       req(rv$view_data)
+      df_derived <- tryCatch(compute_derived_yield_columns(rv$view_data),
+        error = function(e) rv$view_data)
       params <- list(
         rank_threshold_select = if (is.null(input$scr_rank_threshold_select)) 60 else input$scr_rank_threshold_select,
         rank_threshold_plant   = if (is.null(input$scr_rank_threshold_plant)) 60 else input$scr_rank_threshold_plant,
@@ -619,7 +621,7 @@ yield_test_server <- function(id) {
         radar_top_n            = if (is.null(input$scr_radar_top_n)) 5 else input$scr_radar_top_n
       )
       tryCatch(
-        do.call(analyze_screening, c(list(df = rv$view_data), params)),
+        do.call(analyze_screening, c(list(df = df_derived), params)),
         error = function(e) NULL
       )
     })
