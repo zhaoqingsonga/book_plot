@@ -72,7 +72,15 @@ experiments_ui <- function(id) {
               actionButton(ns("btn_import_to_designplot"), "导入田间种植", icon = icon("upload"), class = "btn-warning btn-sm w-50"),
               actionButton(ns("btn_import_all_to_designplot"), "导入全部", icon = icon("upload"), class = "btn-warning btn-sm w-50")
             ),
-            p("将已生成的田试记录导入到种植试验模块", class = "text-muted", style = "font-size: 11px; margin-top: 4px;")
+            p("将已生成的田试记录导入到种植试验模块", class = "text-muted", style = "font-size: 11px; margin-top: 4px;"),
+
+            # 数据库瘦身按钮
+            div(class = "button-group mt-3",
+              actionButton(ns("btn_db_prune"), "数据库瘦身", icon = icon("broom"),
+                           class = "btn-outline-danger btn-sm w-100")
+            ),
+            p("清理种植栈 + 孤儿 plan，回收 SQLite 空间（试验已种下后操作）",
+              class = "text-muted", style = "font-size: 11px; margin-top: 4px;")
           ),
 
           # 试验列表（按类型分组显示）
@@ -930,6 +938,96 @@ experiments_server <- function(id) {
         perform_batch_import(loc_filter)
       }, error = function(e) {
         showNotification(paste("批量导入失败:", e$message), type = "error")
+      })
+    })
+
+    # --- 数据库瘦身：清理种植栈 + 孤儿 plan，回收 SQLite 空间 ---
+    observeEvent(input$btn_db_prune, {
+      sqlite_path <- defaultSqlitePath()
+
+      # 第一步：dry-run 预览，让用户看到会清理多少
+      tryCatch({
+        stack_preview <- pruneLegacyStackData(db_path = sqlite_path, dry_run = TRUE)
+        orphan_preview <- pruneOrphanPlans(db_path = sqlite_path, dry_run = TRUE)
+
+        # 当前数据库文件大小
+        size_before_mb <- if (file.exists(sqlite_path)) {
+          file.info(sqlite_path)$size / 1024 / 1024
+        } else 0
+
+        summary_html <- tagList(
+          tags$div(class = "text-muted small mb-2",
+                   paste0("当前数据库大小: ", sprintf("%.1f MB", size_before_mb))),
+          tags$ul(
+            tags$li(strong("种植栈 / 恢复栈"),
+                    paste0("：将清空 ", stack_preview$undo_deleted, " 条撤销栈 + ",
+                           stack_preview$redo_deleted, " 条恢复栈")),
+            tags$li(strong("孤儿 plan"),
+                    paste0("：将清理 ", orphan_preview$orphan_plan_count, " 个 plan_id，",
+                           "涉及 ", format(orphan_preview$plan_slots, big.mark = ","), " 行 plan_slots"))
+          ),
+          tags$div(class = "alert alert-warning mt-3 mb-2",
+                   style = "font-size: 12px;",
+                   tags$strong("⚠️ 警告："),
+                   "本操作会清空所有撤销/恢复历史。",
+                   tags$br(),
+                   "确认田间已种植完毕、不再需要回撤操作时再继续。"
+          )
+        )
+
+        showModal(modalDialog(
+          title = tagList(icon("broom"), " 数据库瘦身"),
+          summary_html,
+          easyClose = TRUE,
+          footer = tagList(
+            modalButton("取消"),
+            actionButton(ns("confirm_db_prune"), "确认瘦身", class = "btn-danger")
+          )
+        ))
+      }, error = function(e) {
+        showNotification(paste("预览失败:", e$message), type = "error")
+      })
+    })
+
+    observeEvent(input$confirm_db_prune, {
+      removeModal()
+      sqlite_path <- defaultSqlitePath()
+
+      tryCatch({
+        withProgress(message = "正在瘦身...", value = 0, {
+
+          # 步骤 1：清理栈
+          incProgress(0.3, "清理种植栈...")
+          stack_result <- pruneLegacyStackData(db_path = sqlite_path, dry_run = FALSE)
+
+          # 步骤 2：清理孤儿 plan
+          incProgress(0.5, "清理孤儿 plan...")
+          orphan_result <- pruneOrphanPlans(db_path = sqlite_path, dry_run = FALSE)
+
+          # 步骤 3：VACUUM 回收空间
+          incProgress(0.8, "回收 SQLite 空间...")
+          con <- DBI::dbConnect(RSQLite::SQLite(), dbname = sqlite_path)
+          on.exit(DBI::dbDisconnect(con), add = TRUE)
+          DBI::dbExecute(con, "VACUUM")
+
+          incProgress(1.0, "完成")
+        })
+
+        # 报告前后大小
+        size_after_mb <- if (file.exists(sqlite_path)) {
+          file.info(sqlite_path)$size / 1024 / 1024
+        } else 0
+
+        msg <- paste0(
+          "✅ 瘦身完成\n",
+          "撤销栈: ", stack_result$undo_deleted, " 条，恢复栈: ", stack_result$redo_deleted, " 条\n",
+          "孤儿 plan: ", orphan_result$orphan_plan_count, " 个 (",
+          format(orphan_result$plan_slots, big.mark = ","), " 行 plan_slots)\n",
+          "当前数据库大小: ", sprintf("%.1f MB", size_after_mb)
+        )
+        showNotification(msg, type = "message", duration = 10)
+      }, error = function(e) {
+        showNotification(paste("瘦身失败:", e$message), type = "error")
       })
     })
 
