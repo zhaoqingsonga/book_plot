@@ -1,2 +1,17 @@
 data/*.sqlite
 data/*.sqlite3
+data/*.sqlite-shm
+data/*.sqlite-wal
+data/*.sqlite-journal
+data/*.sync-conflict-*
+
+# macOS
+.DS_Store
+
+# graphify 输出目录（中间产物）
+graphify-out/
+
+# R 会话与临时文件
+.RData
+.Rhistory
+*.Rproj
