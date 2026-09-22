@@ -298,6 +298,15 @@ initDesignplotDb <- function(con) {
     ")
     setSchemaVersion(con, 5L)
   }
+
+  # v6: 栈深度上限 + 快照 gzip 压缩 + checkpoint 瘦身后版本
+  # 注：v6 没有 schema 变更，只是行为变更的标志版本。
+  # 下游函数已通过 version=2L 区分 checkpoint 格式。
+  # 栈深度 cap 在 pushPlantingStack / pushPlantingRedoStack 中强制生效。
+  # snapshot gzip 在 savePlantingSnapshot 中强制生效。
+  if (current_ver < 6L) {
+    setSchemaVersion(con, 6L)
+  }
 }
 
 # ---- 通用工具 ----
@@ -1286,7 +1295,10 @@ persistPlanAndAssignments <- function(plan_matrix, planted_matrix = NULL, experi
   if (is.null(x)) y else x
 }
 
-# ---- 执行种植：撤销栈快照（内存中保留最近 N 步，由 Shiny 侧维护列表长度）----
+# ---- 执行种植：撤销栈快照（v2 瘦身后版本，只打包真正需要恢复的数据）----
+# 注意：plan_runs / plan_slots / plant_assignments 三张大表**不再打包**到 checkpoint 里。
+# 它们已经在数据库中持久化，restore 时通过 plan_id 重新关联即可。
+# 这样每个 checkpoint 从 ~10 MB 降到 ~50 KB，栈体积预计下降 ~200 倍。
 capturePlantingUndoCheckpoint <- function(plant_table_name, experiment_id, plan_id, field_name,
                                           db_path = defaultSqlitePath()) {
   plant_table_name <- trimws(as.character(plant_table_name))
@@ -1310,7 +1322,8 @@ capturePlantingUndoCheckpoint <- function(plant_table_name, experiment_id, plan_
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
 
-  # 捕获该地块上所有实验的完整数据（不仅是当前 experiment_id）
+  # 捕获该地块上所有实验的运行记录（experiment_plant_runs 必须保留，因为它不参与 plan_id 关联，
+  # restore 时要靠它整体替换）
   all_epr <- tryCatch(
     DBI::dbGetQuery(con,
       "SELECT * FROM experiment_plant_runs WHERE plant_table_name = ?",
@@ -1319,44 +1332,8 @@ capturePlantingUndoCheckpoint <- function(plant_table_name, experiment_id, plan_
   )
   if (!is.data.frame(all_epr)) all_epr <- data.frame()
 
-  # 始终包含当前 plan_id（savePlanToSqlite 先于 capture 执行，但尚未写入 experiment_plant_runs）
-  all_plan_ids <- unique(c(
-    plan_id,
-    if (nrow(all_epr) > 0 && "plan_id" %in% names(all_epr))
-      stats::na.omit(as.character(all_epr$plan_id)) else character(0)
-  ))
-  all_plan_ids <- all_plan_ids[nzchar(all_plan_ids)]
-
-  plan_run <- data.frame()
-  plan_slots <- data.frame()
-  plant_assignments <- data.frame()
-  if (length(all_plan_ids) > 0) {
-    placeholders <- paste(rep("?", length(all_plan_ids)), collapse = ",")
-    plan_run <- tryCatch(
-      DBI::dbGetQuery(con,
-        paste0("SELECT * FROM plan_runs WHERE plan_id IN (", placeholders, ")"),
-        params = as.list(all_plan_ids)),
-      error = function(e) data.frame()
-    )
-    if (!is.data.frame(plan_run)) plan_run <- data.frame()
-    plan_slots <- tryCatch(
-      DBI::dbGetQuery(con,
-        paste0("SELECT * FROM plan_slots WHERE plan_id IN (", placeholders, ") ORDER BY slot_id"),
-        params = as.list(all_plan_ids)),
-      error = function(e) data.frame()
-    )
-    if (!is.data.frame(plan_slots)) plan_slots <- data.frame()
-    plant_assignments <- tryCatch(
-      DBI::dbGetQuery(con,
-        paste0("SELECT * FROM plant_assignments WHERE plan_id IN (", placeholders, ") ORDER BY assignment_id"),
-        params = as.list(all_plan_ids)),
-      error = function(e) data.frame()
-    )
-    if (!is.data.frame(plant_assignments)) plant_assignments <- data.frame()
-  }
-
   list(
-    version = 1L,
+    version = 2L,                       # v2: 瘦身后（去掉了 plan_run/plan_slots/plant_assignments）
     plant_table_name = plant_table_name,
     field_name = field_name,
     sow_table_name = sow_name,
@@ -1364,15 +1341,16 @@ capturePlantingUndoCheckpoint <- function(plant_table_name, experiment_id, plan_
     plan_id = plan_id,
     plant_matrix = plant_matrix,
     sow_df = sow_df,
-    plan_run = plan_run,
-    plan_slots = plan_slots,
-    plant_assignments = plant_assignments,
     experiment_plant_run = all_epr
+    # v1 字段（已移除）: plan_run, plan_slots, plant_assignments
+    # 这些数据在 restore 端通过 plan_id 从对应表中重新拉取
   )
 }
 
 restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePath()) {
-  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) stop("无效的快照")
+  if (!is.list(checkpoint)) stop("无效的快照")
+  cp_version <- if (!is.null(checkpoint$version)) as.integer(checkpoint$version) else 1L
+  if (!cp_version %in% c(1L, 2L)) stop("无效的快照版本")
   plant_table_name <- trimws(as.character(checkpoint$plant_table_name))
   field_name <- trimws(as.character(checkpoint$field_name))
 
@@ -1384,10 +1362,12 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
 
-  # 收集快照中所有 plan_id
+  # 收集快照中所有 plan_id（v1 还要从 plan_run 里取，v2 只从 checkpoint$plan_id 取）
   all_plan_ids <- unique(c(
     trimws(as.character(checkpoint$plan_id)),
-    if (nrow(checkpoint$plan_run) > 0 && "plan_id" %in% names(checkpoint$plan_run))
+    if (cp_version == 1L && !is.null(checkpoint$plan_run) &&
+        is.data.frame(checkpoint$plan_run) && nrow(checkpoint$plan_run) > 0 &&
+        "plan_id" %in% names(checkpoint$plan_run))
       as.character(checkpoint$plan_run$plan_id) else character(0)
   ))
   all_plan_ids <- all_plan_ids[nzchar(all_plan_ids)]
@@ -1406,50 +1386,55 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
     DBI::dbExecute(con, "DELETE FROM experiment_plant_runs WHERE plant_table_name = ?",
                    params = list(plant_table_name))
 
-    # 恢复 plan_runs
-    pr <- checkpoint$plan_run
-    if (is.data.frame(pr) && nrow(pr) > 0) {
-      for (i in seq_len(nrow(pr))) {
-        DBI::dbExecute(con,
-          "INSERT INTO plan_runs(plan_id, experiment_name, source_param_file, field_length, field_layout, bridge_layout, row_gap, group_rows, design_from_left, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          params = list(
-            as.character(pr$plan_id[i]),
-            as.character(pr$experiment_name[i]),
-            if ("source_param_file" %in% names(pr)) as.character(pr$source_param_file[i]) else NA_character_,
-            suppressWarnings(as.numeric(if ("field_length" %in% names(pr)) pr$field_length[i] else NA_real_)),
-            if ("field_layout" %in% names(pr)) as.character(pr$field_layout[i]) else NA_character_,
-            if ("bridge_layout" %in% names(pr)) as.character(pr$bridge_layout[i]) else NA_character_,
-            suppressWarnings(as.numeric(if ("row_gap" %in% names(pr)) pr$row_gap[i] else NA_real_)),
-            suppressWarnings(as.integer(if ("group_rows" %in% names(pr)) pr$group_rows[i] else NA_integer_)),
-            suppressWarnings(as.integer(if ("design_from_left" %in% names(pr)) pr$design_from_left[i] else NA_integer_)),
-            as.character(pr$created_at[i])
-          ))
+    if (cp_version == 1L) {
+      # v1 checkpoint 在打包时已经把 plan_runs/slots/assignments 一并保存了，需要恢复
+      # ---- 恢复 plan_runs ----
+      pr <- checkpoint$plan_run
+      if (is.data.frame(pr) && nrow(pr) > 0) {
+        for (i in seq_len(nrow(pr))) {
+          DBI::dbExecute(con,
+            "INSERT INTO plan_runs(plan_id, experiment_name, source_param_file, field_length, field_layout, bridge_layout, row_gap, group_rows, design_from_left, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params = list(
+              as.character(pr$plan_id[i]),
+              as.character(pr$experiment_name[i]),
+              if ("source_param_file" %in% names(pr)) as.character(pr$source_param_file[i]) else NA_character_,
+              suppressWarnings(as.numeric(if ("field_length" %in% names(pr)) pr$field_length[i] else NA_real_)),
+              if ("field_layout" %in% names(pr)) as.character(pr$field_layout[i]) else NA_character_,
+              if ("bridge_layout" %in% names(pr)) as.character(pr$bridge_layout[i]) else NA_character_,
+              suppressWarnings(as.numeric(if ("row_gap" %in% names(pr)) pr$row_gap[i] else NA_real_)),
+              suppressWarnings(as.integer(if ("group_rows" %in% names(pr)) pr$group_rows[i] else NA_integer_)),
+              suppressWarnings(as.integer(if ("design_from_left" %in% names(pr)) pr$design_from_left[i] else NA_integer_)),
+              as.character(pr$created_at[i])
+            ))
+        }
+      }
+
+      # ---- 恢复 plan_slots ----
+      ps <- checkpoint$plan_slots
+      if (is.data.frame(ps) && nrow(ps) > 0) {
+        slot_cols <- c("plan_id", "seq_no", "field_row_index", "field_row_no",
+                       "field_col_no", "row_length", "total_length", "interval_width", "created_at")
+        slot_cols <- intersect(slot_cols, names(ps))
+        if (length(slot_cols) > 0) {
+          DBI::dbWriteTable(con, "plan_slots", ps[, slot_cols, drop = FALSE], append = TRUE)
+        }
+      }
+
+      # ---- 恢复 plant_assignments（田间布局图的数据来源）----
+      pa <- checkpoint$plant_assignments
+      if (is.data.frame(pa) && nrow(pa) > 0) {
+        as_cols <- c("plan_id", "seq_no", "experiment_name", "material_name",
+                     "material_subrow_no", "field_row_no", "field_col_no", "created_at")
+        as_cols <- intersect(as_cols, names(pa))
+        if (length(as_cols) > 0) {
+          DBI::dbWriteTable(con, "plant_assignments", pa[, as_cols, drop = FALSE], append = TRUE)
+        }
       }
     }
+    # v2 checkpoint: plan_runs/slots/assignments 不打包，restore 时不写回
+    # 它们要么已经在数据库中（无需恢复），要么靠用户重新触发 savePlanToSqlite 重建
 
-    # 恢复 plan_slots
-    ps <- checkpoint$plan_slots
-    if (is.data.frame(ps) && nrow(ps) > 0) {
-      slot_cols <- c("plan_id", "seq_no", "field_row_index", "field_row_no",
-                     "field_col_no", "row_length", "total_length", "interval_width", "created_at")
-      slot_cols <- intersect(slot_cols, names(ps))
-      if (length(slot_cols) > 0) {
-        DBI::dbWriteTable(con, "plan_slots", ps[, slot_cols, drop = FALSE], append = TRUE)
-      }
-    }
-
-    # 恢复 plant_assignments（田间布局图的数据来源）
-    pa <- checkpoint$plant_assignments
-    if (is.data.frame(pa) && nrow(pa) > 0) {
-      as_cols <- c("plan_id", "seq_no", "experiment_name", "material_name",
-                   "material_subrow_no", "field_row_no", "field_col_no", "created_at")
-      as_cols <- intersect(as_cols, names(pa))
-      if (length(as_cols) > 0) {
-        DBI::dbWriteTable(con, "plant_assignments", pa[, as_cols, drop = FALSE], append = TRUE)
-      }
-    }
-
-    # 恢复 experiment_plant_runs
+    # 恢复 experiment_plant_runs（v1/v2 都需要）
     epr <- checkpoint$experiment_plant_run
     if (is.data.frame(epr) && nrow(epr) > 0) {
       for (i in seq_len(nrow(epr))) {
@@ -1472,8 +1457,150 @@ restorePlantingUndoCheckpoint <- function(checkpoint, db_path = defaultSqlitePat
 }
 
 # =============================================================================
-# 种植快照 — 持久化快照 CRUD
+# 数据瘦身 — 清理历史栈/孤儿 plan
 # =============================================================================
+
+#' 清理无引用的孤儿 plan（plan_runs/plan_slots/plant_assignments 三表关联删除）
+#'
+#' 应用场景：田间已种植完成、回撤反而危险时，主动清理"未真正使用"的旧 plan。
+#' 仅删除没有任何 plant_assignments 引用、且不在实验运行记录里的 plan_id。
+#'
+#' @param dry_run TRUE 仅返回统计，不删除
+#' @return list(plan_runs=..., plan_slots=..., plant_assignments=...) 删除行数
+#' @export
+pruneOrphanPlans <- function(db_path = defaultSqlitePath(), dry_run = FALSE) {
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  # 找出所有"有效"plan_id（有 plant_assignments 或 experiment_plant_runs 引用）
+  used_ids <- unique(c(
+    DBI::dbGetQuery(con, "SELECT DISTINCT plan_id FROM plant_assignments WHERE plan_id IS NOT NULL")$plan_id,
+    DBI::dbGetQuery(con, "SELECT DISTINCT plan_id FROM experiment_plant_runs WHERE plan_id IS NOT NULL AND plan_id != ''")$plan_id
+  ))
+  used_ids <- used_ids[!is.na(used_ids) & nzchar(used_ids)]
+
+  # 找出所有"孤儿"plan_id（在 plan_runs 中但不在 used_ids 里）
+  all_plan_ids <- DBI::dbGetQuery(con, "SELECT DISTINCT plan_id FROM plan_runs")$plan_id
+  orphan_ids <- setdiff(all_plan_ids, used_ids)
+  orphan_ids <- orphan_ids[!is.na(orphan_ids) & nzchar(orphan_ids)]
+
+  if (length(orphan_ids) == 0) {
+    return(list(plan_runs = 0L, plan_slots = 0L, plant_assignments = 0L, dry_run = isTRUE(dry_run)))
+  }
+
+  # 统计待删除行数
+  ph <- paste(rep("?", length(orphan_ids)), collapse = ",")
+  n_plan_runs <- DBI::dbGetQuery(con,
+    paste0("SELECT COUNT(*) AS n FROM plan_runs WHERE plan_id IN (", ph, ")"),
+    params = as.list(orphan_ids))$n[1]
+  n_plan_slots <- DBI::dbGetQuery(con,
+    paste0("SELECT COUNT(*) AS n FROM plan_slots WHERE plan_id IN (", ph, ")"),
+    params = as.list(orphan_ids))$n[1]
+  n_assignments <- DBI::dbGetQuery(con,
+    paste0("SELECT COUNT(*) AS n FROM plant_assignments WHERE plan_id IN (", ph, ")"),
+    params = as.list(orphan_ids))$n[1]
+
+  if (isTRUE(dry_run)) {
+    return(list(
+      plan_runs = as.integer(n_plan_runs),
+      plan_slots = as.integer(n_plan_slots),
+      plant_assignments = as.integer(n_assignments),
+      orphan_plan_count = length(orphan_ids),
+      dry_run = TRUE
+    ))
+  }
+
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, paste0("DELETE FROM plant_assignments WHERE plan_id IN (", ph, ")"),
+                   params = as.list(orphan_ids))
+    DBI::dbExecute(con, paste0("DELETE FROM plan_slots WHERE plan_id IN (", ph, ")"),
+                   params = as.list(orphan_ids))
+    DBI::dbExecute(con, paste0("DELETE FROM plan_runs WHERE plan_id IN (", ph, ")"),
+                   params = as.list(orphan_ids))
+  })
+
+  list(
+    plan_runs = as.integer(n_plan_runs),
+    plan_slots = as.integer(n_plan_slots),
+    plant_assignments = as.integer(n_assignments),
+    orphan_plan_count = length(orphan_ids),
+    dry_run = FALSE
+  )
+}
+
+#' 一次性瘦身：清理整个持久化栈 + 恢复栈（试验已种植后，回撤危险）
+#'
+#' 删除种植栈/恢复栈的所有历史条目——保留最近 0 条。
+#' 注意：调用前请确认田间已种植完毕、用户无需回撤。
+#' 同时把每地块的栈深度立即截到 PLANTING_STACK_MAX_DEPTH。
+#'
+#' @param dry_run TRUE 仅返回统计
+#' @return list(undo_deleted=, redo_deleted=, snapshot_deleted=)
+#' @export
+pruneLegacyStackData <- function(db_path = defaultSqlitePath(), dry_run = FALSE) {
+  con <- connectDesignplotDb(db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  initDesignplotDb(con)
+
+  n_undo <- DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM planting_stack")$n[1]
+  n_redo <- DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM planting_redo_stack")$n[1]
+
+  if (isTRUE(dry_run)) {
+    return(list(
+      undo_deleted = as.integer(n_undo),
+      redo_deleted = as.integer(n_redo),
+      dry_run = TRUE
+    ))
+  }
+
+  DBI::dbWithTransaction(con, {
+    if (n_undo > 0) DBI::dbExecute(con, "DELETE FROM planting_stack")
+    if (n_redo > 0) DBI::dbExecute(con, "DELETE FROM planting_redo_stack")
+  })
+
+  list(
+    undo_deleted = as.integer(n_undo),
+    redo_deleted = as.integer(n_redo),
+    dry_run = FALSE
+  )
+}
+
+# =============================================================================
+# 种植快照 — 持久化快照 CRUD（v2 起使用 zlib 压缩存储）
+# =============================================================================
+
+# 快照 BLOB 压缩格式检测：
+# - 压缩格式（R memCompress type="gzip"）：首字节 0x78（zlib 头），第 2 字节通常 0x01/0x5E/0x9C/0xDA
+# - 未压缩（base::serialize）：首字节 0x58（XDR 魔数 'X'），第 2 字节 0x0A
+SNAPSHOT_ZLIB_MAGIC <- as.raw(c(0x78))
+SNAPSHOT_RAW_MAGIC <- as.raw(c(0x58))
+
+#' 判断 BLOB 是否为 zlib 压缩格式
+.isCompressedBlob <- function(raw_vec) {
+  if (length(raw_vec) < 2L) return(FALSE)
+  raw_vec[1] == SNAPSHOT_ZLIB_MAGIC[1] && raw_vec[2] != SNAPSHOT_RAW_MAGIC[1]
+}
+
+#' 序列化 + 可选压缩（zlib 格式，通过 memCompress "gzip" 实现）
+#' 注：R 的 memCompress("gzip") 输出实际是 zlib 包装（RFC 1950），不是原生 gzip（RFC 1952）。
+#' 但解压时仍用 memDecompress("gzip")，可完美往返，且压缩比与 gzip 相同。
+.serializeCheckpoint <- function(checkpoint_list, compress = TRUE) {
+  serialized <- base::serialize(checkpoint_list, NULL)
+  if (compress) {
+    memCompress(serialized, type = "gzip")
+  } else {
+    serialized
+  }
+}
+
+#' 反序列化 + 自动识别压缩
+.unserializeCheckpoint <- function(raw_vec) {
+  if (.isCompressedBlob(raw_vec)) {
+    raw_vec <- memDecompress(raw_vec, type = "gzip")
+  }
+  base::unserialize(raw_vec)
+}
 
 #' 保存种植快照到指定槽位（1 或 2，后续保存同一槽位会覆盖）
 savePlantingSnapshot <- function(slot, experiment_id, plant_table_name, checkpoint_list,
@@ -1486,7 +1613,7 @@ savePlantingSnapshot <- function(slot, experiment_id, plant_table_name, checkpoi
   if (!nzchar(plant_table_name)) stop("plant_table_name 不能为空")
   if (!is.list(checkpoint_list)) stop("checkpoint_list 必须为列表")
 
-  blob_data <- base::serialize(checkpoint_list, NULL)
+  blob_data <- .serializeCheckpoint(checkpoint_list, compress = TRUE)
   con <- connectDesignplotDb(db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   initDesignplotDb(con)
@@ -1515,10 +1642,11 @@ loadPlantingSnapshot <- function(slot, db_path = defaultSqlitePath()) {
   if (!is.data.frame(row) || nrow(row) == 0L) return(NULL)
 
   checkpoint <- tryCatch(
-    base::unserialize(row$snapshot_data[[1]]),
+    .unserializeCheckpoint(row$snapshot_data[[1]]),
     error = function(e) stop("快照数据已损坏，无法恢复")
   )
-  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) {
+  cp_version <- if (!is.null(checkpoint$version)) as.integer(checkpoint$version) else 1L
+  if (!is.list(checkpoint) || !cp_version %in% c(1L, 2L)) {
     stop("快照数据格式无效，无法恢复")
   }
   checkpoint
@@ -1563,12 +1691,36 @@ getPlantingSnapshotInfo <- function(slot, db_path = defaultSqlitePath()) {
 }
 
 # =============================================================================
-# 种植栈 — 持久化无限栈（LIFO 进栈/出栈，支持逐级撤销）
+# 种植栈 — 持久化栈（LIFO 进栈/出栈，支持逐级撤销）
 # =============================================================================
+
+# 栈深度上限：每地块最多保留 N 步历史
+# 注：试验已种下后，回撤反而危险——撤销错一步可能误删数据。
+# 设为 5 步够"误点立即撤销"应急，但避免历史无限累积撑爆库。
+PLANTING_STACK_MAX_DEPTH <- 5L
+
+# 内部辅助：限制某地块栈深度不超过 cap
+# 删除最早的条目（FIFO），保留最新 N 条
+.truncatePlantingStack <- function(con, table_name, id_col, plant_table_name, max_depth) {
+  DBI::dbExecute(con, sprintf("
+    DELETE FROM %s
+    WHERE %s NOT IN (
+      SELECT %s FROM %s
+      WHERE plant_table_name = ?
+      ORDER BY %s DESC
+      LIMIT ?
+    ) AND plant_table_name = ?
+  ", table_name,
+     id_col, id_col, table_name, id_col),
+    params = list(plant_table_name, max_depth, plant_table_name)
+  )
+}
 
 #' 将种植快照推入持久化栈
 pushPlantingStack <- function(checkpoint, db_path = defaultSqlitePath()) {
-  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) stop("无效的快照")
+  if (!is.list(checkpoint)) stop("无效的快照")
+  cp_version <- if (!is.null(checkpoint$version)) as.integer(checkpoint$version) else 1L
+  if (!cp_version %in% c(1L, 2L)) stop("无效的快照版本")
   plant_table_name <- trimws(as.character(checkpoint$plant_table_name))
   experiment_id <- trimws(as.character(checkpoint$experiment_id))
   plan_id <- trimws(as.character(checkpoint$plan_id))
@@ -1586,6 +1738,9 @@ pushPlantingStack <- function(checkpoint, db_path = defaultSqlitePath()) {
     INSERT INTO planting_stack(plant_table_name, experiment_id, plan_id, stack_data, created_at)
     VALUES (?, ?, ?, ?, datetime('now','localtime'))
   ", params = list(plant_table_name, experiment_id, plan_id, list(serialized)))
+
+  # 限制栈深度
+  .truncatePlantingStack(con, "planting_stack", "stack_id", plant_table_name, PLANTING_STACK_MAX_DEPTH)
 
   new_id <- DBI::dbGetQuery(con, "SELECT last_insert_rowid() AS id")$id[1]
   invisible(as.integer(new_id))
@@ -1611,8 +1766,12 @@ popPlantingStack <- function(plant_table_name, db_path = defaultSqlitePath()) {
 
   if (!is.data.frame(row) || nrow(row) == 0L) return(NULL)
 
-  checkpoint <- base::unserialize(row$stack_data[[1]])
-  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) {
+  checkpoint <- tryCatch(
+    .unserializeCheckpoint(row$stack_data[[1]]),
+    error = function(e) stop("种植栈数据损坏：无法反序列化为有效快照")
+  )
+  cp_version <- if (!is.null(checkpoint$version)) as.integer(checkpoint$version) else 1L
+  if (!is.list(checkpoint) || !cp_version %in% c(1L, 2L)) {
     stop("种植栈数据损坏：无法反序列化为有效快照")
   }
 
@@ -1686,7 +1845,9 @@ clearPlantingStack <- function(plant_table_name, db_path = defaultSqlitePath()) 
 
 #' 将种植快照推入恢复栈
 pushPlantingRedoStack <- function(checkpoint, db_path = defaultSqlitePath()) {
-  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) stop("无效的快照")
+  if (!is.list(checkpoint)) stop("无效的快照")
+  cp_version <- if (!is.null(checkpoint$version)) as.integer(checkpoint$version) else 1L
+  if (!cp_version %in% c(1L, 2L)) stop("无效的快照版本")
   plant_table_name <- trimws(as.character(checkpoint$plant_table_name))
   experiment_id <- trimws(as.character(checkpoint$experiment_id))
   plan_id <- trimws(as.character(checkpoint$plan_id))
@@ -1704,6 +1865,9 @@ pushPlantingRedoStack <- function(checkpoint, db_path = defaultSqlitePath()) {
     INSERT INTO planting_redo_stack(plant_table_name, experiment_id, plan_id, redo_data, created_at)
     VALUES (?, ?, ?, ?, datetime('now','localtime'))
   ", params = list(plant_table_name, experiment_id, plan_id, list(serialized)))
+
+  # 限制栈深度（与 undo 栈共用上限）
+  .truncatePlantingStack(con, "planting_redo_stack", "redo_id", plant_table_name, PLANTING_STACK_MAX_DEPTH)
 
   new_id <- DBI::dbGetQuery(con, "SELECT last_insert_rowid() AS id")$id[1]
   invisible(as.integer(new_id))
@@ -1729,8 +1893,12 @@ popPlantingRedoStack <- function(plant_table_name, db_path = defaultSqlitePath()
 
   if (!is.data.frame(row) || nrow(row) == 0L) return(NULL)
 
-  checkpoint <- base::unserialize(row$redo_data[[1]])
-  if (!is.list(checkpoint) || !identical(checkpoint$version, 1L)) {
+  checkpoint <- tryCatch(
+    .unserializeCheckpoint(row$redo_data[[1]]),
+    error = function(e) stop("恢复栈数据损坏：无法反序列化为有效快照")
+  )
+  cp_version <- if (!is.null(checkpoint$version)) as.integer(checkpoint$version) else 1L
+  if (!is.list(checkpoint) || !cp_version %in% c(1L, 2L)) {
     stop("恢复栈数据损坏：无法反序列化为有效快照")
   }
 
