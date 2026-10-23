@@ -8,8 +8,8 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# 端口
-PORT=3681
+# 端口：允许外部（pm2 env / shell）覆盖，默认 3681
+PORT="${PORT:-3681}"
 
 # 显示信息
 echo "=========================================="

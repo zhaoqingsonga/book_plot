@@ -18,7 +18,6 @@
 book_plot/
 ├── app.R                      # 主程序入口
 ├── run.sh                     # 启动脚本
-├── ecosystem.config.js        # Shiny Server 配置
 ├── migrate_designplot_schema.R # 数据库迁移脚本
 ├── www/                       # 静态资源
 │   └── styles.css             # 自定义样式
@@ -56,7 +55,15 @@ shiny::runApp()
 ```
 
 ### 服务器部署
-配合 Shiny Server 或 ShinyProxy 使用，`ecosystem.config.js` 已配置好相关参数。
+
+pm2 配置统一放在 `~/GitHub/.pm2-config/ecosystem.config.js`，与 soy_cross_v2 一并管理：
+
+```bash
+pm2 start ~/GitHub/.pm2-config/ecosystem.config.js
+pm2 logs book-plot
+```
+
+默认端口 3681，可用 `PORT` 环境变量覆盖。
 
 ## 数据流程
 
