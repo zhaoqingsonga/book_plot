@@ -13,8 +13,8 @@
 #' @param rank_threshold_select 晋级材料位次阈值，默认 60
 #' @param rank_threshold_plant 分离选单株位次阈值，默认 60
 #' @param exclude_lodging 排除的倒伏性等级，NULL 表示不排除
-#' @param keep_eliminated_vector 手动保留的阶段（不淘汰），NULL 表示无
-#' @param keep_not_select_vector 手动保留的阶段（不进入分离选单株），NULL 表示无
+#' @param keep_eliminated_vector 指定不参与晋级筛选的阶段名称向量，NULL 表示无
+#' @param keep_not_select_vector 指定不参与分离选单株筛选的阶段名称向量，NULL 表示无
 #' @param place 按地点筛选，NULL 表示全部
 #' @param radar_top_n 雷达图品种数
 #' @param radar_selected_names 手动指定雷达图品种
@@ -174,8 +174,12 @@ plot_selection_comparison <- function(rdf_before, rdf_after) {
   indicators <- c("亩产_kg", "生育期_d", "株高_cm", "百粒重_g")
   indicator_labels <- c("亩产 (kg)", "生育期 (天)", "株高 (cm)", "百粒重 (g)")
 
-  # 只使用存在的指标
-  exist_idx <- which(indicators %in% colnames(rdf_before))
+  # 只使用存在且有数据的指标（整列为空的指标如未开展考种的百粒重会产生空面板）
+  not_all_na <- vapply(indicators, function(ind) {
+    if (!ind %in% colnames(rdf_before)) return(FALSE)
+    any(!is.na(rdf_before[[ind]]))
+  }, logical(1))
+  exist_idx <- which(not_all_na)
   if (length(exist_idx) == 0) return(NULL)
   indicators <- indicators[exist_idx]
   indicator_labels <- indicator_labels[exist_idx]
@@ -203,14 +207,19 @@ plot_selection_comparison <- function(rdf_before, rdf_after) {
       dplyr::select(dplyr::any_of(indicators)) %>%
       dplyr::mutate(状态 = "选后")
   ) %>%
-    tidyr::drop_na()
+    dplyr::filter(rowSums(dplyr::across(dplyr::all_of(indicators),
+                                        ~ as.numeric(!is.na(.x)))) > 0)
 
   if (nrow(comparison_data) == 0) return(NULL)
 
   # 长格式
+  # 注意：drop_na 必须放在 pivot_longer 之后。
+  # 放在之前会按「整行任一指标为空」删记录——当某个指标（如未考种的百粒重）整列为空时，
+  # 全部记录都会被删光，图就静默不生成。
   long_data <- comparison_data %>%
     tidyr::pivot_longer(cols = dplyr::all_of(indicators),
       names_to = "指标", values_to = "数值") %>%
+    tidyr::drop_na() %>%
     dplyr::mutate(指标名称 = factor(指标, levels = indicators, labels = indicator_labels))
 
   # 均值

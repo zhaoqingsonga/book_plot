@@ -926,20 +926,25 @@ build_markdown_report <- function(result, output_path, chart_dir = "图表", tab
   invisible(output_path)
 }
 
+#' 将分析结果落盘：图表/ 数据表/ + 各类报告文件
+#'
+#' 通用分析模块「分析」与 Shiny 页共用同一套落盘逻辑。
+#'
+#' @param result run_analysis() 的返回值
+#' @param out_dir 输出目录（不存在则创建）
+#' @return invisibly 输出目录
 #' @export
-build_analysis_zip <- function(result, output_path) {
-  tmpdir <- file.path(tempdir(), paste0("analysis_", format(Sys.time(), "%Y%m%d%H%M%S")))
-  dir.create(tmpdir, showWarnings = FALSE, recursive = TRUE)
-  on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
+save_analysis_artifacts <- function(result, out_dir) {
+  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
-  chart_dir <- file.path(tmpdir, "图表")
-  table_dir <- file.path(tmpdir, "数据表")
+  chart_dir <- file.path(out_dir, "图表")
+  table_dir <- file.path(out_dir, "数据表")
   dir.create(chart_dir, showWarnings = FALSE)
   dir.create(table_dir, showWarnings = FALSE)
 
   plot_names <- list(
     yield_dist       = "亩产分布",
-    yield_grade      = "产量等级分布",
+    yield_grade_dist = "产量等级分布",
     increase_dist    = "增产分布",
     growth_dist      = "生育期分布",
     scatter_growth   = "生育期vs产量",
@@ -1047,11 +1052,11 @@ build_analysis_zip <- function(result, output_path) {
   # ---- 描述文本 ----
   if (!is.null(result$tables$description) && is.character(result$tables$description)) {
     writeLines(result$tables$description,
-      file.path(tmpdir, "晋级材料评述.txt"), useBytes = TRUE)
+      file.path(out_dir, "晋级材料评述.txt"), useBytes = TRUE)
   }
 
   # ---- Excel 报告 ----
-  xlsx_path <- file.path(tmpdir, "分析报告.xlsx")
+  xlsx_path <- file.path(out_dir, "分析报告.xlsx")
   tryCatch({
     build_analysis_excel(result, xlsx_path)
   }, error = function(e) {
@@ -1059,7 +1064,7 @@ build_analysis_zip <- function(result, output_path) {
   })
 
   # ---- Markdown 报告 ----
-  md_path <- file.path(tmpdir, "分析报告.md")
+  md_path <- file.path(out_dir, "分析报告.md")
   tryCatch({
     build_markdown_report(result, md_path, "图表", "数据表")
   }, error = function(e) {
@@ -1067,20 +1072,41 @@ build_analysis_zip <- function(result, output_path) {
   })
 
   # ---- HTML 报告 ----
-  html_path <- file.path(tmpdir, "分析报告.html")
+  html_path <- file.path(out_dir, "分析报告.html")
   tryCatch({
     build_html_report(result, html_path)
   }, error = function(e) {
     message("HTML 报告生成失败: ", e$message)
   })
 
-  # ---- 打包 ----
+  invisible(out_dir)
+}
+
+#' 分析结果打包为 ZIP
+#'
+#' @param result run_analysis() 的返回值
+#' @param output_path 输出 zip 路径（相对或绝对均可）
+#' @return invisibly 输出路径
+#' @export
+build_analysis_zip <- function(result, output_path) {
+  tmpdir <- file.path(tempdir(), paste0("analysis_", format(Sys.time(), "%Y%m%d%H%M%S")))
+  dir.create(tmpdir, showWarnings = FALSE, recursive = TRUE)
+
+  # 先切回原工作目录再删临时目录，否则 unlink 会因为 cwd 在其中而失败
   old_wd <- getwd()
-  on.exit(setwd(old_wd), add = TRUE)
+  on.exit({
+    setwd(old_wd)
+    unlink(tmpdir, recursive = TRUE)
+  }, add = TRUE)
+
+  save_analysis_artifacts(result, tmpdir)
+
+  # output_path 可能是相对路径：先绝对化所在目录，再拼文件名
+  out_abs <- file.path(normalizePath(dirname(output_path), mustWork = TRUE),
+                        basename(output_path))
   setwd(tmpdir)
   top_entries <- list.files(".", all.files = FALSE, no.. = TRUE)
-  zip::zip(output_path, top_entries, mode = "mirror")
-  setwd(old_wd)
+  zip::zip(out_abs, top_entries, mode = "mirror")
 
   invisible(output_path)
 }

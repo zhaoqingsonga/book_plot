@@ -1,5 +1,5 @@
 # =============================================================================
-# 田间记录本生成及田间规划 - Shiny App
+# 田间记录本生成及数据分析系统 - Shiny App
 # 基于soyplant库的田间试验规划工具
 # 支持三种记录本类型：群体、株行、产比
 # 流程：上传 -> 维护 -> 生成记录本
@@ -44,13 +44,13 @@ source("shared/import_regional.R")
 source("shared/mod_regional_import.R")
 source("shared/mod_other_analysis.R")
 
-# 加载designplot模块
-source("shared/designplot/constants.R")
-source("shared/designplot/sqlite_persistence.R")
-source("shared/designplot/parsers.R")
-source("shared/designplot/core_design.R")
-source("shared/designplot/app_ui.R", local = TRUE)
-source("shared/designplot/app_server.R", local = TRUE)
+# 田间种植设计模块已拆分为独立软件「田间试验种植规划系统」，本系统不再加载。
+# source("shared/designplot/constants.R")
+# source("shared/designplot/sqlite_persistence.R")
+# source("shared/designplot/parsers.R")
+# source("shared/designplot/core_design.R")
+# source("shared/designplot/app_ui.R", local = TRUE)
+# source("shared/designplot/app_server.R", local = TRUE)
 
 # Bootstrap 5 主题（主色、圆角、字体与自定义样式中的 var(--bs-*) 对齐）
 fb_theme <- bs_theme(
@@ -65,7 +65,7 @@ fb_theme <- bs_theme(
 # === UI 定义 ===
 
 ui <- navbarPage(
-  title = div(icon("seedling"), "田间记录本生成及田间规划"),
+  title = div(icon("seedling"), "田间记录本生成及数据分析系统"),
   id = "main_nav",
   theme = fb_theme,
 
@@ -103,20 +103,23 @@ ui <- navbarPage(
   ),
 
   # === 5. 田间种植 ===
+  # 已移至独立软件「田间试验种植规划系统」，本系统不再内置该入口。
+
+  # === 6. 分析 ===
   tabPanel(
-    "田间种植",
-    icon = icon("seedling"),
-    buildDesignplotUI()
+    "分析",
+    icon = icon("chart-bar"),
+    generic_analysis_ui("gen_analysis")
   ),
 
-  # === 6. E智导入 ===
+  # === 7. E智导入 ===
   tabPanel(
     "E智导入",
     icon = icon("upload"),
     settings_ui("settings_mod")
   ),
 
-  # === 7. 其它试验 ===
+  # === 8. 其它试验 ===
   tabPanel(
     "其它试验",
     icon = icon("file-import"),
@@ -131,10 +134,10 @@ ui <- navbarPage(
       div(class = "about-hero",
         div(class = "about-hero-content",
           div(class = "about-hero-icon", icon("seedling")),
-          h2("田间记录本生成及田间规划"),
-          p(class = "about-hero-version", "v2.0"),
+          h2("田间记录本生成及数据分析系统"),
+          p(class = "about-hero-version", "v1.0"),
           p(class = "about-hero-desc",
-            "基于 soyplant 库的田间试验规划工具，一站式完成群体、株行、产比三种记录本的生成与管理。"
+            "基于 soyplant 库的大豆育种数据分析工具，一站式完成群体、株行、产比三种记录本的生成、管理与性状统计分析。"
           )
         )
       ),
@@ -158,7 +161,7 @@ ui <- navbarPage(
         ),
         div(class = "about-feature-card",
           div(class = "about-feature-icon", icon("seedling")),
-          div(class = "about-feature-label", "田间种植图"),
+          div(class = "about-feature-label", "性状统计分析"),
           div(class = "about-feature-desc", "可视化编辑种植布局")
         )
       ),
@@ -216,7 +219,7 @@ ui <- navbarPage(
         ),
         hr(),
         p(style = "text-align: center; color: #888; font-size: 0.85em; margin: 0;",
-          "© 2024 田间记录本生成及田间规划 — 为作物育种田间试验而生")
+          "© 2026 田间记录本生成及数据分析系统 — 为作物育种田间试验而生")
       )
     )
   )
@@ -231,7 +234,8 @@ server <- function(input, output, session) {
   yield_test_server("yield_mod")
   settings_server("settings_mod")
   regional_import_server("regional_import")
-  buildDesignplotServer(input, output, session)
+  generic_analysis_server("gen_analysis")
+  # buildDesignplotServer(input, output, session)  # 已拆分至独立软件
 
   # 中转：mod_experiments 导入成功后向 designplot 发送的 refresh 消息，
   # 由于 session 隔离，mod_experiments 的 session 无法直接刷新 designplot 的 UI。

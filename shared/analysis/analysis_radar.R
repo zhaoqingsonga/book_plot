@@ -24,7 +24,18 @@ plot_radar_top <- function(df, top_n = 5, selected_names = NULL) {
 
   radar_data <- df %>%
     dplyr::select(dplyr::any_of(radar_cols)) %>%
-    dplyr::filter(!is.na(MuChan)) %>%
+    dplyr::filter(!is.na(MuChan))
+
+  # 剔除整列为空的指标（如未开展考种的百粒重）：mean(NA) = NaN，
+  # 会被下面的 if_all(!is.na) 全数过滤掉，导致雷达图静默不生成
+  all_na_cols <- names(radar_data)[vapply(radar_data, function(x) {
+    is.numeric(x) && all(is.na(x))
+  }, logical(1))]
+  if (length(all_na_cols) > 0) {
+    radar_data <- radar_data[, setdiff(names(radar_data), all_na_cols), drop = FALSE]
+  }
+
+  radar_data <- radar_data %>%
     dplyr::group_by(name) %>%
     dplyr::summarise(
       dplyr::across(dplyr::where(is.numeric), ~ mean(.x, na.rm = TRUE)),

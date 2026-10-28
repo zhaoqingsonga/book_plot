@@ -16,6 +16,8 @@ source("shared/analysis/analysis_line_selection.R")
 source("shared/analysis/analysis_export.R")
 source("shared/analysis/analysis_yield_growth_chart.R")
 source("shared/analysis/analysis_html_report.R")
+source("shared/analysis/analysis_module.R")
+source("shared/analysis/analysis_ui.R")
 
 # ==============================================================================
 # 1. 主调度器

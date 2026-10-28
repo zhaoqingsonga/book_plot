@@ -16,3 +16,6 @@ graphify-out/
 .RData
 .Rhistory
 *.Rproj
+
+# 通用分析模块「分析」的落盘产物（图表/数据表/报告，可用 scripts/analyze_trial.R 重生成）
+分析输出/
