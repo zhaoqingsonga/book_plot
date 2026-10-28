@@ -43,6 +43,13 @@ metadata:
    管线负责"产量多少、排第几"。人工观察进附录，**不许拿人工结论改管线数字**，
    反过来也不许把管线数字写成田间观察。
 
+   **人工评价的取数走「逐材料田间评价总表」**（N-4.2 的样例：
+   `~/GitHub/Obsidian/02wiki/02-项目/2026年田间调查/B. 调查·初选·评价/2026-宿州-N-4.2-常规初级产比-材料田间评价.md`），
+   **不要自己再去翻 md 巡田笔记拼一遍**。那张总表已经把三类来源合并到一行：
+   巡田时间线四轮（`08-08｜` `09-01｜` `09-24｜` `10月｜`）+ 数据库田间备注
+   （`库-备注｜` `库-08-30｜` `库-09-17｜`）+ 数据库各期评价
+   （`库-苗期｜` `库-花期｜` `库-成熟期｜`），每格自带来源标签。
+
 7. **报告放 vault，不放仓库。** 输出到
    `~/GitHub/Obsidian/02wiki/02-项目/<年份>年试验报告/`，
    遵循 vault 的写作规范（frontmatter / wikilink / 图片嵌入）。
@@ -254,6 +261,10 @@ frontmatter (title / type: report / tags / sources / created / updated / 置信�
 - `references/口径与图表分诊.md` —— 口径定义、图表已知缺陷、分诊动作
 - `references/Obsidian-写作规范.md` —— vault frontmatter / wikilink / 图片 / git 约定
 - 样板：`~/GitHub/Obsidian/02wiki/02-项目/2026年试验报告/N-4.2-常规-初级产比-宿州-2026年试验报告.md`
+- 逐材料田间评价总表（stageid / name / 田间评价，三类来源已合并）：
+  `~/GitHub/Obsidian/02wiki/02-项目/2026年田间调查/B. 调查·初选·评价/2026-宿州-N-4.2-常规初级产比-材料田间评价.md`
+- 巡田评价时间线（只有四轮巡田笔记、不含 DB 字段的那一半）：
+  `~/GitHub/Obsidian/02wiki/02-项目/2026年田间调查/B. 调查·初选·评价/2026-宿州-常规初级产比-田间调查评价时间线.md`
 - 2025 原版（体裁源头）：`~/GitHub/Obsidian/01raw/2025_report/2025年黄淮海大豆育种站试验总结-宿州.md`
 - 管线源码：`shared/analysis/`（`analysis_yield_core.R` 出图、`analysis_screening.R` 出筛选）
 - 数据口径硬规矩：`~/.hermes/skills/book-plot-field-book/SKILL.md`
