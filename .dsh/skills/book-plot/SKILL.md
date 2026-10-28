@@ -12,7 +12,7 @@ whenToUse: 问题需要查该项目的**事实性内容**（具体数值、条�
 |---|---|---|
 | 知识 | `test_output/` | **6** 份 md/txt/csv |
 | 数据 | `data/field_book.sqlite`, `data/other_trials.sqlite`, `shared/designplot/designplot.db` | **36** 张表 |
-| 代码 | `shared/`、`参考脚本/`、`www/` | **53** 个脚本 |
+| 代码 | `shared/`、`参考脚本/`、`www/` | **58** 个脚本 |
 
 > ⚠️ **这些数字会过时，以 `capabilities` / `tables` 现查为准。** skill 是会腐坏的文档。
 
@@ -41,6 +41,24 @@ python3 "$PK" --root "$PROJ" scripts
 4. **⚠️ 不要自动运行项目里的脚本。** 先读它、确认只读，再决定；要改数据让作者本人来。
 5. **回答带出处**：文件路径、表名、或你跑的 SQL。
 6. **文档可能和实际脱节**（README 写的表名/行数未必对）——**以 `tables`/`schema` 为准**。
+7. **⚠️ 产量结论一律走官方分析管线，不许自己算。** 亩产、增产率、品种筛选
+   （晋级 / 分离选单株 / 淘汰）**必须**用项目自带的分析入口跑：
+
+   ```bash
+   Rscript scripts/analyze_trial.R --list                            # 查试验 ID
+   Rscript scripts/analyze_trial.R --exp <试验ID> --json             # 结构化结论（推荐）
+   Rscript scripts/analyze_trial.R --exp <试验ID> --out 分析输出/<名>  # 完整报告
+   ```
+
+   **不要手写 SQL 算亩产，不要用 Python 重算。** 管线口径（对照离群剔除、
+   两套增产基准、位次阈值、倒伏排除）与随手算的不一致，手算必然对不上，
+   报出去的数字就是错的。
+
+   `scripts/analyze_trial.R` 是**只读**的（只读库、只写 `--out` 目录），
+   是本条第 4 条「不要自动运行项目里的脚本」的**唯一例外**。
+
+   `--json` 输出约 190 KB（含 400 条名单）；要查单个材料就
+   `--json-out /tmp/x.json` 再 grep，不要整份塞进上下文。
 
 ---
 
@@ -100,11 +118,19 @@ python3 "$PK" --root "$PROJ" scripts
 
 ---
 
-## 三、代码（53 个，本层只列不跑）
+## 三、代码（58 个，本层只列不跑）
 
-- `.r` 51 个：`app.R`, `migrate_designplot_schema.R`, `migrate_xiaoqulishu.R`, `test_dup.R`, `test_full_pipeline.R`
+- `.r` 54 个：`app.R`, `migrate_designplot_schema.R`, `migrate_xiaoqulishu.R`, `test_dup.R`, `test_full_pipeline.R`
 - `.sh` 1 个：`run.sh`
-- `.sql` 1 个：`test_import.sql`
+- `.sql` 3 个：`www/test_import.sql`, `scripts/fix_f1_parent_names.sql`, `scripts/rollback_f1_parent_names.sql`
+
+**分析入口（例外：只读，可以跑）**：`scripts/analyze_trial.R`
+
+- `--list` 列出全部可分析试验（试验 ID / 类型 / 名称 / 记录数）
+- `--exp <试验ID>` 跑 `soyplant::run_analysis()`；`--json` 出结构化结论、
+  `--json-full` 出全表、`--out <目录>` 出完整报告（图表 + 数据表 +
+  Markdown/HTML/Excel/ZIP）
+- 与应用内「分析」标签页同源同口径——两边数字必须一致
 
 ---
 
@@ -141,6 +167,10 @@ python3 "$PK" --root "$PROJ" scripts
 8. **备份**：本机备份脚本在 `0soyhub/scripts/backup_field_book.py`
    （SQLite 在线备份 API，不停服务、零依赖，含恢复演练）；细节见
    `0soyhub/agentic-book/_备份与同步边界.md`。
+
+9. **⚠️ 亩产不能自己算。** 对照离群剔除（1.5×IQR）、两套增产基准（较临近对照 /
+   较平均对照）、位次阈值、倒伏排除这几件事，只有 `run_analysis()` 里有统一实现。
+   手算的结果和报告、应用界面、导出表**都对不上**——见「一、硬规矩」第 7 条。
 
 ---
 

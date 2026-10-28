@@ -16,6 +16,7 @@ suppressPackageStartupMessages({
   library(dplyr); library(ggplot2); library(soyplant)
   library(DBI); library(RSQLite); library(openxlsx)
   library(corrplot); library(fmsb); library(ggrepel); library(htmltools)
+  library(jsonlite)
 })
 
 # ---- 定位项目根目录（本脚本位于 <root>/scripts/）----
@@ -38,12 +39,18 @@ usage <- function() {
       "  Rscript scripts/analyze_trial.R --list\n",
       "  Rscript scripts/analyze_trial.R --exp <试验ID> [--type yield_test|population|line_selection]\n",
       "        [--out <输出目录>] [--db <sqlite路径>] [--zip]\n",
-      "        [--rank <晋级位次阈值>] [--plant <分离选单株阈值>] [--lodging 9,7]\n\n", sep = "")
+      "        [--rank <晋级位次阈值>] [--plant <分离选单株阈值>] [--lodging 9,7]\n",
+      "        [--json] [--json-full] [--json-out <文件>]\n\n",
+      "  --json        以 JSON 输出（摘要 + 三类名单）到 stdout，供脚本/大模型消费\n",
+      "  --json-full   额外包含全部原始明细表（体积大，建议配合 --json-out）\n",
+      "  --json-out F  把 JSON 写到文件 F（隐含 --json）\n",
+      "  注：--json 且未指定 --out 时只计算、不落盘，跑得快\n\n", sep = "")
 }
 
 parse_args <- function(args) {
   opt <- list(exp = NULL, type = NULL, out = NULL, db = NULL,
-              rank = NULL, plant = NULL, lodging = NULL, zip = FALSE, list = FALSE)
+              rank = NULL, plant = NULL, lodging = NULL, zip = FALSE, list = FALSE,
+              json = FALSE, json_full = FALSE, json_out = NULL)
   i <- 1
   while (i <= length(args)) {
     a <- args[i]
@@ -58,6 +65,9 @@ parse_args <- function(args) {
       "--lodging" = { opt$lodging <- val; i <- i + 2 },
       "--zip"     = { opt$zip     <- TRUE; i <- i + 1 },
       "--list"    = { opt$list    <- TRUE; i <- i + 1 },
+      "--json"      = { opt$json      <- TRUE; i <- i + 1 },
+      "--json-full" = { opt$json      <- TRUE; opt$json_full <- TRUE; i <- i + 1 },
+      "--json-out"  = { opt$json      <- TRUE; opt$json_out  <- val; i <- i + 2 },
       "--help"    = { usage(); quit(status = 0) },
       { cat("未知参数：", a, "\n"); usage(); quit(status = 1) }
     )
@@ -104,18 +114,39 @@ if (!is.null(opt$rank) || !is.null(opt$plant) || !is.null(opt$lodging)) {
   }
 }
 
-cat("== 分析：", opt$exp, "==\n", sep = "")
+module_type <- if (is.null(opt$type)) "yield_test" else opt$type
+use_json    <- isTRUE(opt$json)
+# 纯 JSON 查询默认不落盘（不生成图表，跑得快）；指定了 --out 才写文件
+save_artifacts <- !use_json || !is.null(opt$out)
 
 res <- analysis_run(
   experiment_id    = opt$exp,
-  module_type      = if (is.null(opt$type)) "yield_test" else opt$type,
+  module_type      = module_type,
   db_path          = db_path,
   out_dir          = opt$out,
   screening_params = screening_params,
-  zip_output       = opt$zip
+  zip_output       = opt$zip && save_artifacts,
+  save_artifacts   = save_artifacts
 )
 
 r <- res$result
+
+# ---- JSON 输出（脚本 / 大模型消费）----
+if (use_json) {
+  payload <- build_analysis_json(r, experiment_id = opt$exp,
+                                  module_type = module_type, full = opt$json_full)
+  txt <- as.character(jsonlite::toJSON(payload, auto_unbox = TRUE,
+                                        na = "null", digits = NA, pretty = 2))
+  if (!is.null(opt$json_out)) {
+    writeLines(txt, opt$json_out, useBytes = TRUE)
+    cat("JSON 已写入：", opt$json_out, "\n", sep = "")
+  } else {
+    cat(txt, "\n", sep = "")
+  }
+  quit(status = 0)
+}
+
+cat("\n== 分析：", opt$exp, "==\n")
 cat("\n-- 试验类型 --\n")
 cat("  ", r$trial_info$label, "：", r$trial_info$desc, "\n")
 

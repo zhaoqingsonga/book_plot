@@ -99,11 +99,14 @@ analysis_load_trial <- function(experiment_id, module_type = "yield_test",
 #' @param screening_params list()，传给 analyze_screening() 的参数
 #'   （rank_threshold_select / rank_threshold_plant / exclude_lodging / ...）
 #' @param zip_output 是否额外产出 ZIP 包
+#' @param save_artifacts 是否落盘（图表 / 数据表 / 报告）。FALSE 时只算不写，
+#'   用于快速查询（如命令行入口的 --json）
 #' @return list(result, out_dir, files, messages)
 #' @export
 analysis_run <- function(experiment_id, module_type = "yield_test",
                          db_path = defaultDbPath(), out_dir = NULL,
-                         screening_params = NULL, zip_output = TRUE) {
+                         screening_params = NULL, zip_output = TRUE,
+                         save_artifacts = TRUE) {
 
   df <- analysis_load_trial(experiment_id, module_type, db_path)
 
@@ -135,18 +138,24 @@ analysis_run <- function(experiment_id, module_type = "yield_test",
     out_dir <- file.path("分析输出", paste0(experiment_id, "_", module_type))
   }
 
-  save_analysis_artifacts(result, out_dir)
+  if (save_artifacts) {
+    save_analysis_artifacts(result, out_dir)
 
-  if (zip_output) {
-    zip_path <- file.path(out_dir, "分析报告.zip")
-    tryCatch({
-      build_analysis_zip(result, zip_path)
-    }, error = function(e) {
-      message("ZIP 打包失败：", e$message)
-    })
+    if (zip_output) {
+      zip_path <- file.path(out_dir, "分析报告.zip")
+      tryCatch({
+        build_analysis_zip(result, zip_path)
+      }, error = function(e) {
+        message("ZIP 打包失败：", e$message)
+      })
+    }
   }
 
-  files <- list.files(out_dir, recursive = TRUE, full.names = FALSE)
+  files <- if (save_artifacts) {
+    list.files(out_dir, recursive = TRUE, full.names = FALSE)
+  } else {
+    character(0)
+  }
 
   list(
     result   = result,
@@ -154,4 +163,81 @@ analysis_run <- function(experiment_id, module_type = "yield_test",
     files    = files,
     messages = result$messages
   )
+}
+
+# ==============================================================================
+# JSON 输出（给脚本 / 大模型消费）
+# ------------------------------------------------------------------------------
+# 与 Shiny 页、命令行共用同一份 run_analysis() 结果，保证口径一致；
+# 目的是让调用方（脚本、Agent）能直接拿到结构化结论，而不是自己重算。
+# ==============================================================================
+
+# 名单类表只保留关键字段：编号、名称、亲本、产量、两个基准的增产率与位次、倒伏、淘汰原因
+ANALYSIS_JSON_LIST_COLS <- c(
+  "stageid", "name", "ma", "pa",
+  "XiaoQuChanLiang", "MuChan",
+  "JiaoLinJinDuiZhaoZengChan", "JiaoPingJunDuiZhaoZengChan",
+  "JiaoLinJinDuiZhaoWeiCi", "JiaoPingJunDuiZhaoWeiCi",
+  "DaoFuXing", "淘汰原因"
+)
+
+#' 从表里挑字段（缺失列自动忽略，空表返回空 list）
+#' @noRd
+analysis_json_pick <- function(df, cols) {
+  if (is.null(df) || !is.data.frame(df)) return(list())
+  cols <- intersect(cols, colnames(df))
+  if (length(cols) == 0) return(list())
+  df[, cols, drop = FALSE]
+}
+
+#' 把分析结果整理成 JSON 友好的结构
+#'
+#' 与 Shiny 页、命令行共用同一份 run_analysis() 结果，保证口径一致。
+#'
+#' @param result run_analysis() 的返回值
+#' @param experiment_id 试验 ID
+#' @param module_type 记录本类型
+#' @param full TRUE 时额外带上全部原始明细表（体积大）
+#' @return list，可直接交给 jsonlite::toJSON()
+#' @export
+build_analysis_json <- function(result, experiment_id = NULL,
+                                module_type = NULL, full = FALSE) {
+  t  <- result$tables
+  ti <- result$trial_info
+
+  payload <- list(
+    experiment_id = experiment_id,
+    module_type   = module_type,
+    trial_info = list(
+      label      = if (!is.null(ti$label)) ti$label else "",
+      desc       = if (!is.null(ti$desc)) ti$desc else "",
+      places     = if (!is.null(ti$places)) as.character(ti$places) else character(0),
+      n_reps     = if (!is.null(ti$n_reps)) ti$n_reps else NA,
+      has_traits = isTRUE(result$has_traits)
+    ),
+    messages     = as.character(result$messages),
+    capabilities = list(available = if (!is.null(result$capabilities))
+      as.character(result$capabilities$available) else character(0)),
+    yield_stats       = if (!is.null(t$yield_stats)) t$yield_stats else list(),
+    increase_stats    = if (!is.null(t$increase_stats)) t$increase_stats else list(),
+    screening_summary = if (!is.null(t$screening_summary)) t$screening_summary else list(),
+    lists = list(
+      promoted     = analysis_json_pick(t$promoted,     ANALYSIS_JSON_LIST_COLS),
+      select_plant = analysis_json_pick(t$select_plant, ANALYSIS_JSON_LIST_COLS),
+      eliminated   = analysis_json_pick(t$eliminated,   ANALYSIS_JSON_LIST_COLS)
+    )
+  )
+
+  if (full) {
+    payload$tables <- list(
+      overview      = t$overview,
+      yield_ranking = t$yield_ranking,
+      promoted      = t$promoted,
+      select_plant  = t$select_plant,
+      eliminated    = t$eliminated,
+      export_data   = t$export_data
+    )
+  }
+
+  payload
 }
