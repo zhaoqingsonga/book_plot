@@ -46,6 +46,60 @@ default_rank_threshold <- function(df, pct = DEFAULT_RANK_THRESHOLD_PCT) {
   default_rank_threshold_from_n(count_materials(df), pct)
 }
 
+# 性状分离判据：① 性状栏取值 99-分离；② 田间备注里写了「分离 / 不纯 / 提纯」
+SEPARATION_TRAITS <- list(
+  list(pinyin = "HuaSe",        ref = "花色",    label = "花色"),
+  list(pinyin = "YeXing",       ref = "叶形",    label = "叶形"),
+  list(pinyin = "RongMaoSe",    ref = "茸毛色",  label = "茸毛色"),
+  list(pinyin = "JieJiaXiXing", ref = "结荚习性", label = "结荚习性"),
+  list(pinyin = "JiaShuSe",     ref = "荚熟色",  label = "荚熟色")
+)
+SEPARATION_MEMO_COLS <- c("田间备注", "TianJianBeiZhu", "memo")
+SEPARATION_MEMO_KEYWORDS <- c("分离", "不纯", "提纯")
+
+#' 判定每个小区的性状分离情况
+#'
+#' 两个判据合并：
+#' ① 性状栏取值 `99-分离`（花色/叶形/茸毛色/结荚习性/荚熟色）；
+#' ② 田间备注里写了「分离 / 不纯 / 提纯」等字样（人工评语也算）。
+#'
+#' @param df 已适配为参考列名的数据框
+#' @return 字符向量，与 df 行对齐；未记分离为 NA
+#' @export
+detect_trait_segregation <- function(df) {
+  if (is.null(df) || nrow(df) == 0) return(character(0))
+  out <- rep(NA_character_, nrow(df))
+
+  trait_cols <- lapply(SEPARATION_TRAITS, function(tr) intersect(c(tr$ref, tr$pinyin), colnames(df)))
+  for (i in seq_along(SEPARATION_TRAITS)) {
+    cn <- trait_cols[[i]]
+    if (length(cn) == 0) next
+    tr <- SEPARATION_TRAITS[[i]]
+    v <- as.character(df[[cn[1]]])
+    hit <- !is.na(v) & grepl("99[-－— ]*分离", v)
+    if (any(hit)) {
+      out[hit] <- ifelse(is.na(out[hit]), tr$label, paste(out[hit], tr$label, sep = "、"))
+    }
+  }
+
+  memo_col <- intersect(SEPARATION_MEMO_COLS, colnames(df))
+  if (length(memo_col) > 0) {
+    m <- as.character(df[[memo_col[1]]])
+    for (i in seq_along(m)) {
+      if (is.na(m[i])) next
+      kw <- SEPARATION_MEMO_KEYWORDS[vapply(SEPARATION_MEMO_KEYWORDS,
+                                            function(k) grepl(k, m[i], fixed = TRUE), logical(1))]
+      if (length(kw) == 0) next
+      traits <- vapply(SEPARATION_TRAITS, function(tr) grepl(tr$label, m[i], fixed = TRUE), logical(1))
+      label <- paste0("备注：", paste(c(vapply(SEPARATION_TRAITS[traits],
+                                               function(tr) tr$label, character(1)), kw),
+                                      collapse = "·"))
+      out[i] <- if (is.na(out[i])) label else paste(out[i], label, sep = "；")
+    }
+  }
+  out
+}
+
 #' 品种筛选分析
 #'
 #' 根据位次阈值、倒伏性等级筛选晋级、高产分离选单株和淘汰材料，
@@ -166,6 +220,17 @@ analyze_screening <- function(df,
       rank_threshold_select, exclude_lodging)
   }
 
+  # ===== 3.5 性状分离标注（性状栏 99-分离 或 田间备注写了 分离/不纯/提纯） =====
+  seg_all <- detect_trait_segregation(rdf)
+  add_sep_col <- function(tbl) {
+    idx <- match(rownames(tbl), rownames(rdf))
+    tbl$性状分离 <- ifelse(is.na(idx), NA_character_, seg_all[idx])
+    tbl
+  }
+  promoted     <- add_sep_col(promoted)
+  select_plant <- add_sep_col(select_plant)
+  eliminated   <- add_sep_col(eliminated)
+
   # ===== 4. 筛选摘要 =====
   summary <- list(
     total_n         = nrow(rdf),
@@ -173,6 +238,7 @@ analyze_screening <- function(df,
     rank_threshold_select = rank_threshold_select,
     rank_threshold_plant  = rank_threshold_plant,
     promoted_n      = nrow(promoted),
+    segregated_n    = sum(!is.na(promoted$性状分离)),
     select_plant_n  = nrow(select_plant),
     eliminated_n    = nrow(eliminated),
     breakdown       = list(
