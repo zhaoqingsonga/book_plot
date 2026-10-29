@@ -81,6 +81,10 @@ metadata:
 
 ## 三、执行流程（按顺序做，不要跳）
 
+> 完整的端到端 SOP（立项 → 跑管线 → 定晋级阈值 → 校验名单 → 性状分离拆表 →
+> 图表分诊 → 成文 → 自检 → 同步交付）见 `references/分析流程-初级产比.md`。
+> **下次做初级产比试验就按那份走，顺序不要改、步骤不要跳。**
+
 ### Step 0 · 查试验 ID
 
 ```bash
@@ -286,6 +290,7 @@ frontmatter (title / type: report / tags / sources / created / updated / 置信�
 
 ## 八、相关参考
 
+- `references/分析流程-初级产比.md` —— **端到端分析 SOP**（立项→跑管线→定阈值→校验名单→分离拆表→自检→同步交付）
 - `references/2025-报告骨架.md` —— 逐节骨架 + 2025 原版节选对照
 - `references/口径与图表分诊.md` —— 口径定义、图表已知缺陷、分诊动作
 - `references/Obsidian-写作规范.md` —— vault frontmatter / wikilink / 图片 / git 约定
