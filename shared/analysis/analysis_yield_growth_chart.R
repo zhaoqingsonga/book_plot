@@ -6,12 +6,19 @@
 # ==============================================================================
 
 # ---- 辅助：识别对照标记（兼容逻辑/数值/字符多种写法） ----
+# ⚠️ is_ck 在库里是 TEXT，实际值是 "1.0" / "0.0" / "1" / "0" 混存（见
+#    references/口径与图表分诊.md 坑 #20）。只认 "1" 会漏掉 "1.0" 的对照小区，
+#    count_materials() 就会把对照算进参试材料数。所以数值型字符串先按数值判。
 control_flag <- function(v) {
   if (is.logical(v)) return(v)
   if (is.numeric(v)) return(v == 1)
   v <- as.character(v)
   v_trim <- trimws(v)
-  v_trim %in% c("1", "是", "对照", "Y", "y", "TRUE", "True", "true")
+  out <- v_trim %in% c("是", "对照", "Y", "y", "TRUE", "True", "true")
+  num <- suppressWarnings(as.numeric(v_trim))
+  num_ok <- !is.na(num)
+  out[num_ok] <- num[num_ok] == 1
+  out
 }
 
 #' 生成高产基因型的产量-生育期双轴组合图

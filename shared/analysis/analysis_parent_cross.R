@@ -3,14 +3,23 @@
 # 从参考脚本 00-elite_parents_selection.R 移植
 # ==============================================================================
 
+# 亲本口径的晋级阈值：**管线固定值，不跟筛选阈值走**。
+# 筛选口径的阈值来自 UI 滑块（rank_threshold_select），两者各算各的 ——
+# 报告里的表 4-5/4-7 是筛选口径，表 4-8/4-9、图 4-12 是亲本口径，
+# **不可混读**。改动这个常量会波及表 4-8/4-9 与已有报告的历史数字，
+# 故本次只把它命名出来，不改行为（见 report_rules.R 的 parent_threshold_mismatch 规则）。
+PARENT_PROMOTE_RANK_THRESHOLD <- 60L
+
 #' 亲本与组合分析
 #'
 #' @param df 数据框（拼音列名）
 #' @param min_crosses 最小配组数
 #' @param top_pct 晋级率分位阈值
+#' @param promote_rank_threshold 亲本口径的晋级位次阈值（默认 60 = 管线原行为）
 #' @return list(parent_stats, cross_stats, parent_plot)
 #' @export
-analyze_parent_cross <- function(df, min_crosses = 3, top_pct = 0.65) {
+analyze_parent_cross <- function(df, min_crosses = 3, top_pct = 0.65,
+                                  promote_rank_threshold = PARENT_PROMOTE_RANK_THRESHOLD) {
   if (!requireNamespace("dplyr", quietly = TRUE) ||
       !requireNamespace("ggplot2", quietly = TRUE)) return(NULL)
 
@@ -32,11 +41,11 @@ analyze_parent_cross <- function(df, min_crosses = 3, top_pct = 0.65) {
     ))
   }
 
-  # 标记晋级状态（简化：位次<=60为晋级）
+  # 标记晋级状态（位次 <= promote_rank_threshold 为晋级；默认阈值见文件头常量）
   if (has_promoted) {
     parent_df <- parent_df %>%
       dplyr::mutate(晋级状态 = ifelse(
-        !is.na(JiaoPingJunDuiZhaoWeiCi) & JiaoPingJunDuiZhaoWeiCi <= 60,
+        !is.na(JiaoPingJunDuiZhaoWeiCi) & JiaoPingJunDuiZhaoWeiCi <= promote_rank_threshold,
         "晋级", "未晋级"))
   } else {
     parent_df <- parent_df %>%

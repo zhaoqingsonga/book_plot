@@ -24,16 +24,60 @@ default_rank_threshold_from_n <- function(n_material,
 
 #' 统计参试材料数（对照小区不计入）
 #'
-#' @param df 数据框（拼音列名 is_ck 或参考列名 是否对照 均可）
+#' ⚠️ 多点 / 多重复试验必须按材料去重，否则材料数会被地点数、重复数放大：
+#' 同一材料在每个地点、每个重复各占一行，直接数行数会把分母放大 5~10 倍，
+#' 导致「参试材料数的前 25%」这个阈值算出来远大于真实值（筛选通道形同虚设）。
+#'
+#' 口径：**先按「地点 × 重复」分组，每组内按材料身份去重，取各组里的最大组**。
+#' - 分组键：地点（place / 地点）× 重复（rp / 重复）
+#' - 材料身份：优先 stageid（阶段编号），退化时用 name（品种名称）
+#' - 取「最大组」而不是「所有组求和」：因为位次是在每个 (地点, 重复) 组内各算一套，
+#'   阈值要跟同一套位次可比，所以分母取「一个组里有多少个材料」。
+#'
+#' ⚠️ 不能改用「按品种名去重」：库里存在同名不同材料（stageid 不同、name 相同），
+#'   按 name 去重会把不同材料合并成一个。
+#'
+#' @param df 数据框（拼音列名 is_ck / place / rp / stageid / name，
+#'   或参考列名 是否对照 / 地点 / 品种名称 均可）
 #' @return 整数参试材料数
 #' @export
 count_materials <- function(df) {
   if (is.null(df) || nrow(df) == 0) return(0L)
-  ck_col <- intersect(c("是否对照", "is_ck"), colnames(df))
-  if (length(ck_col) == 0) return(nrow(df))
-  ck <- control_flag(df[[ck_col[1]]])
-  ck[is.na(ck)] <- FALSE
-  sum(!ck)
+
+  # ---- 排除对照小区 ----
+  ck_col <- intersect(c("是否对照", "is_ck", "对照"), colnames(df))
+  if (length(ck_col) > 0) {
+    ck <- control_flag(df[[ck_col[1]]])
+    ck[is.na(ck)] <- FALSE
+    df <- df[!ck, , drop = FALSE]
+  }
+  if (nrow(df) == 0) return(0L)
+
+  # ---- 材料身份列：stageid 优先（同名不同材料时唯一），退化到 name ----
+  # 注意：adapt_to_reference() 把 stageid 映射成「阶段名称」、name 映射成「品种名称」，
+  # 所以这里必须同时认这两组名字，否则会误用 name 去重（同名不同材料会被合并）。
+  id_col <- intersect(c("stageid", "阶段名称", "阶段编号"), colnames(df))
+  if (length(id_col) == 0) {
+    id_col <- intersect(c("name", "品种名称"), colnames(df))
+  }
+  if (length(id_col) == 0) return(nrow(df))
+  id_col <- id_col[1]
+
+  # ---- 分组键：地点 × 重复（多点/多重复时同一材料在各组里重复出现）----
+  grp_cols <- intersect(c("place", "地点", "rp", "重复"), colnames(df))
+
+  if (length(grp_cols) == 0) {
+    # 单地点单重复：直接按材料身份去重
+    return(as.integer(length(unique(df[[id_col]]))))
+  }
+
+  # 按组切分，每组内按材料身份去重，取最大的一组
+  key <- do.call(paste, c(lapply(grp_cols, function(cc) as.character(df[[cc]])),
+                          list(sep = "\r")))
+  n_by_group <- tapply(seq_len(nrow(df)), key, function(idx) {
+    length(unique(df[[id_col]][idx]))
+  })
+  as.integer(max(n_by_group))
 }
 
 #' 由数据框算出默认晋级位次阈值（对照小区不计入参试材料）
