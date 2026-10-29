@@ -98,6 +98,8 @@ analysis_load_trial <- function(experiment_id, module_type = "yield_test",
 #' @param out_dir 输出目录；NULL 时用「分析输出/<试验ID_类型>」
 #' @param screening_params list()，传给 analyze_screening() 的参数
 #'   （rank_threshold_select / rank_threshold_plant / exclude_lodging / ...）
+#' @param place 只分析指定地点，NULL 表示全部地点。多点试验做单点分析时用：
+#'   在**推导列计算之前**按地点过滤，位次/增产率等口径与该地点单做单点试验一致
 #' @param zip_output 是否额外产出 ZIP 包
 #' @param save_artifacts 是否落盘（图表 / 数据表 / 报告）。FALSE 时只算不写，
 #'   用于快速查询（如命令行入口的 --json）
@@ -105,10 +107,23 @@ analysis_load_trial <- function(experiment_id, module_type = "yield_test",
 #' @export
 analysis_run <- function(experiment_id, module_type = "yield_test",
                          db_path = defaultDbPath(), out_dir = NULL,
-                         screening_params = NULL, zip_output = TRUE,
+                         screening_params = NULL, place = NULL,
+                         zip_output = TRUE,
                          save_artifacts = TRUE) {
 
   df <- analysis_load_trial(experiment_id, module_type, db_path)
+
+  # 地点过滤：必须在 run_analysis() 之前做，
+  # 这样推导列（亩产 / 增产率 / 位次）只在该地点内计算 —— 与该地点单做单点试验同口径
+  if (!is.null(place)) {
+    if (!"place" %in% colnames(df)) {
+      stop("试验 ", experiment_id, " 没有「地点」列，无法按地点筛选（place=", place, "）")
+    }
+    df <- df[df[["place"]] == place, , drop = FALSE]
+    if (nrow(df) == 0) {
+      stop("地点「", place, "」在本试验中没有田间记录")
+    }
+  }
 
   result <- run_analysis(df, module_type)
 

@@ -40,8 +40,10 @@ usage <- function() {
       "  Rscript scripts/analyze_trial.R --exp <试验ID> [--type yield_test|population|line_selection]\n",
       "        [--out <输出目录>] [--db <sqlite路径>] [--zip]\n",
       "        [--rank <晋级位次阈值>] [--plant <分离选单株阈值>] [--lodging 9,7]\n",
+      "        [--place <地点>]\n",
       "        [--json] [--json-full] [--json-out <文件>]\n\n",
       "  --rank/--plant 不传时，默认取「参试材料数的前 25%」（不含对照）\n",
+      "  --place       只分析该地点（多点试验做单点分析用），位次/增产率按该地点内计算\n",
       "  --json        以 JSON 输出（摘要 + 三类名单）到 stdout，供脚本/大模型消费\n",
       "  --json-full   额外包含全部原始明细表（体积大，建议配合 --json-out）\n",
       "  --json-out F  把 JSON 写到文件 F（隐含 --json）\n",
@@ -50,7 +52,8 @@ usage <- function() {
 
 parse_args <- function(args) {
   opt <- list(exp = NULL, type = NULL, out = NULL, db = NULL,
-              rank = NULL, plant = NULL, lodging = NULL, zip = FALSE, list = FALSE,
+              rank = NULL, plant = NULL, lodging = NULL, place = NULL,
+              zip = FALSE, list = FALSE,
               json = FALSE, json_full = FALSE, json_out = NULL)
   i <- 1
   while (i <= length(args)) {
@@ -64,6 +67,7 @@ parse_args <- function(args) {
       "--rank"    = { opt$rank    <- as.integer(val); i <- i + 2 },
       "--plant"   = { opt$plant   <- as.integer(val); i <- i + 2 },
       "--lodging" = { opt$lodging <- val; i <- i + 2 },
+      "--place"   = { opt$place   <- val; i <- i + 2 },
       "--zip"     = { opt$zip     <- TRUE; i <- i + 1 },
       "--list"    = { opt$list    <- TRUE; i <- i + 1 },
       "--json"      = { opt$json      <- TRUE; i <- i + 1 },
@@ -126,6 +130,7 @@ res <- analysis_run(
   db_path          = db_path,
   out_dir          = opt$out,
   screening_params = screening_params,
+  place            = opt$place,
   zip_output       = opt$zip && save_artifacts,
   save_artifacts   = save_artifacts
 )
