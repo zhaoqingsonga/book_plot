@@ -261,8 +261,10 @@ frontmatter (title / type: report / tags / sources / created / updated / 置信�
 - [ ] 缺产材料、离群对照、缺失字段都进了「待确认事项」
 - [ ] 人工田间评价在附录，正文数字没有被人工结论改动
 - [ ] §7.4 写清了**晋级方法**（规则：阶段名分流 / 两套位次 AND / 倒伏排除 / ≤ vs < / 对照位无位次）
-      和**晋级位次阈值的调整方法**（Shiny 滑块、`analyze_screening()` 参数、命令行 `--rank --plant --lodging`），
-      并写明「改阈值必须重跑管线，不许手改数字」
+      和**晋级位次阈值的调整方法**（应用内「分析」→「品种筛选」标签页的滑块、`analyze_screening()` 参数、
+      命令行 `--rank --plant --lodging`），并写明「改阈值必须重跑管线，不许手改数字」
+- [ ] §7.4 写了**定阈值的三条约束**（容量 / 质量 / 口径）＋「本报告取 X 的理由」，
+      并提醒「导出标签页打包的是旧阈值结果，导出新阈值必须重跑管线」
 - [ ] frontmatter 齐全（title/type/tags/sources/created/updated/置信度）
 - [ ] `## 关联` 里的 wikilink 指向的页面**真实存在**
 - [ ] 结尾有「承试单位（盖章）」行
