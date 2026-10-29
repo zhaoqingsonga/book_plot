@@ -1,0 +1,32 @@
+# 试验报告编排唯一真相源
+# 表/图编号按本文件 blocks 列表的出现顺序分配（表、图各自独立计数）。
+template_id: primary
+stage_no: 4
+appendix_prefix: A
+blocks:
+  - {id: tbl_yield_core,      kind: table,  section: "7.1", title: "产量核心统计"}
+  - {id: fig_yield_dist,      kind: figure, section: "7.1", plot_key: yield_dist}
+  - {id: fig_yield_grade,     kind: figure, section: "7.1", plot_key: yield_grade_dist}
+  - {id: fig_increase,        kind: figure, section: "7.1", plot_key: increase_dist}
+  - {id: fig_growth,          kind: figure, section: "7.1", plot_key: growth_dist}
+  - {id: tbl_trait_dist,      kind: table,  section: "7.2", title: "形态性状分布（{n_plots} 小区）"}
+  - {id: fig_quality_huase,      kind: figure, section: "7.2", plot_key: "quality_花色"}
+  - {id: fig_quality_yexing,     kind: figure, section: "7.2", plot_key: "quality_叶形"}
+  - {id: fig_quality_rongmaose,  kind: figure, section: "7.2", plot_key: "quality_茸毛色"}
+  - {id: fig_quality_jiejiaxixing, kind: figure, section: "7.2", plot_key: "quality_结荚习性"}
+  - {id: fig_quality_daofuxing,   kind: figure, section: "7.2", plot_key: "quality_倒伏性"}
+  - {id: tbl_growth_bin,      kind: table,  section: "7.3", title: "生育期分箱与平均亩产（材料层，n = {n_mat_yield}）"}
+  - {id: fig_scatter_growth,  kind: figure, section: "7.3", plot_key: scatter_growth}
+  - {id: tbl_screening_rules, kind: table,  section: "7.4", title: "晋级筛选规则（管线口径）"}
+  - {id: tbl_promoted_no_sep, kind: table,  section: "7.4", title: "晋级材料小区产量分析——无性状分离（{promoted_no_sep_n} 份）"}
+  - {id: tbl_promoted_sep,    kind: table,  section: "7.4", title: "晋级材料小区产量分析——有性状分离、需提纯（{promoted_sep_n} 份）"}
+  - {id: fig_comparison,      kind: figure, section: "7.4", plot_key: comparison}
+  - {id: tbl_threshold_scan,  kind: table,  section: "7.4", title: "晋级位次阈值敏感性（管线实跑）"}
+  - {id: tbl_cross_stats,     kind: table,  section: "7.5", title: "优异组合筛选"}
+  - {id: tbl_parent_stats,    kind: table,  section: "7.5", title: "优异亲本筛选"}
+  - {id: fig_parent_plot,     kind: figure, section: "7.5", plot_key: parent_plot}
+  - {id: tbl_top5,            kind: table,  section: "7.6", title: "产量前 5 材料"}
+  - {id: fig_radar,           kind: figure, section: "7.6", plot_key: radar}
+  - {id: tbl_a4_rounds,       kind: table,  section: "A.4", title: "四次田间评价"}
+  - {id: tbl_a4_sources,      kind: table,  section: "A.4", title: "各来源覆盖情况"}
+  - {id: tbl_a4_field_eval,   kind: table,  section: "A.4", title: "材料田间评价表（按亩产降序）"}

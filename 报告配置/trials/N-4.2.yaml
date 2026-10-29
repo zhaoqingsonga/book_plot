@@ -1,0 +1,18 @@
+trial_no: N-4.2
+experiment_id: YIELD_20260527153649_1915
+stage_no: 4
+体裁: 常规-初级产比
+地点: 宿州
+year: 2026
+field_notes_md: ~/GitHub/Obsidian/02wiki/02-项目/2026年田间调查/B. 调查·初选·评价/2026-宿州-常规初级产比-田间调查评价时间线.md
+sop_source: ../2026年试验方案/2026年黄淮海大豆育种站试验方案-SOP.md
+created: 2026-10-28
+updated: 2026-10-29
+design:
+  ck_variety: 中黄301
+  ck_interval: 20
+  n_reps: 1
+  blocks: 20
+  arrangement: 间比法顺序排列
+  plot_area_m2: 9.6
+sop_confirmed: false
