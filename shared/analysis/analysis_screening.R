@@ -4,14 +4,56 @@
 # plot_selection_comparison_addck() 移植
 # ==============================================================================
 
+# 默认晋级位次阈值：取参试材料数的前 25%（粗算，够用即可）
+DEFAULT_RANK_THRESHOLD_PCT <- 0.25
+
+#' 由参试材料数算出默认晋级位次阈值
+#'
+#' @param n_material 参试材料数（不含对照）
+#' @param pct 比例，默认 0.25
+#' @return 整数位次阈值（>= 1）
+#' @export
+default_rank_threshold_from_n <- function(n_material,
+                                          pct = DEFAULT_RANK_THRESHOLD_PCT) {
+  if (is.null(n_material) || length(n_material) != 1L ||
+      !is.finite(n_material) || n_material <= 0) {
+    return(1L)
+  }
+  max(1L, as.integer(ceiling(pct * n_material)))
+}
+
+#' 统计参试材料数（对照小区不计入）
+#'
+#' @param df 数据框（拼音列名 is_ck 或参考列名 是否对照 均可）
+#' @return 整数参试材料数
+#' @export
+count_materials <- function(df) {
+  if (is.null(df) || nrow(df) == 0) return(0L)
+  ck_col <- intersect(c("是否对照", "is_ck"), colnames(df))
+  if (length(ck_col) == 0) return(nrow(df))
+  ck <- control_flag(df[[ck_col[1]]])
+  ck[is.na(ck)] <- FALSE
+  sum(!ck)
+}
+
+#' 由数据框算出默认晋级位次阈值（对照小区不计入参试材料）
+#'
+#' @param df 数据框（拼音或参考列名均可）
+#' @param pct 比例，默认 0.25
+#' @return 整数位次阈值（>= 1）
+#' @export
+default_rank_threshold <- function(df, pct = DEFAULT_RANK_THRESHOLD_PCT) {
+  default_rank_threshold_from_n(count_materials(df), pct)
+}
+
 #' 品种筛选分析
 #'
 #' 根据位次阈值、倒伏性等级筛选晋级、高产分离选单株和淘汰材料，
 #' 生成对比图表和雷达图。
 #'
 #' @param df 数据框（拼音列名）
-#' @param rank_threshold_select 晋级材料位次阈值，默认 60
-#' @param rank_threshold_plant 分离选单株位次阈值，默认 60
+#' @param rank_threshold_select 晋级材料位次阈值，NULL = 自动取参试材料数的前 25%
+#' @param rank_threshold_plant 分离选单株位次阈值，NULL = 自动取参试材料数的前 25%
 #' @param exclude_lodging 排除的倒伏性等级，NULL 表示不排除
 #' @param keep_eliminated_vector 指定不参与晋级筛选的阶段名称向量，NULL 表示无
 #' @param keep_not_select_vector 指定不参与分离选单株筛选的阶段名称向量，NULL 表示无
@@ -21,8 +63,8 @@
 #' @return list(promoted, select_plant, eliminated, comparison_plot, radar_plot, summary)
 #' @export
 analyze_screening <- function(df,
-                               rank_threshold_select = 60,
-                               rank_threshold_plant = 60,
+                               rank_threshold_select = NULL,
+                               rank_threshold_plant = NULL,
                                exclude_lodging = c("9-严重倒", "7-重倒"),
                                keep_eliminated_vector = NULL,
                                keep_not_select_vector = NULL,
@@ -34,6 +76,17 @@ analyze_screening <- function(df,
   # 地点过滤
   if (!is.null(place) && "地点" %in% colnames(rdf)) {
     rdf <- rdf[rdf[["地点"]] == place, ]
+  }
+
+  # 参试材料数（对照小区不计入）
+  n_material <- count_materials(rdf)
+
+  # 默认位次阈值：参试材料数的前 25%（不传则自动算）
+  if (is.null(rank_threshold_select)) {
+    rank_threshold_select <- default_rank_threshold_from_n(n_material)
+  }
+  if (is.null(rank_threshold_plant)) {
+    rank_threshold_plant <- default_rank_threshold_from_n(n_material)
   }
 
   # 检查必需的位次列
@@ -116,6 +169,9 @@ analyze_screening <- function(df,
   # ===== 4. 筛选摘要 =====
   summary <- list(
     total_n         = nrow(rdf),
+    n_material      = n_material,
+    rank_threshold_select = rank_threshold_select,
+    rank_threshold_plant  = rank_threshold_plant,
     promoted_n      = nrow(promoted),
     select_plant_n  = nrow(select_plant),
     eliminated_n    = nrow(eliminated),
@@ -299,15 +355,24 @@ compute_elimination_reasons <- function(eliminated, rank_cols, rank_threshold, e
 #' 品种筛选控制面板 UI
 #' @export
 screening_controls_ui <- function(ns,
-                                   rank_threshold_select = 60,
-                                   rank_threshold_plant = 60,
+                                   rank_threshold_select = NULL,
+                                   rank_threshold_plant = NULL,
                                    radar_top_n = 5,
-                                   id_prefix = "") {
+                                   id_prefix = "",
+                                   n_material = NULL) {
+  # 默认阈值 = 参试材料数的前 25%（n_material 未知时退回 60）
+  default_thr <- if (is.null(n_material)) 60L else default_rank_threshold_from_n(n_material)
+  if (is.null(rank_threshold_select)) rank_threshold_select <- default_thr
+  if (is.null(rank_threshold_plant))   rank_threshold_plant   <- default_thr
+  thr_max <- max(100, as.integer(max(rank_threshold_select, rank_threshold_plant) * 2))
   fluidRow(
-    column(3, sliderInput(ns(paste0(id_prefix, "scr_rank_threshold_select")), "晋级位次阈值",
-      min = 1, max = 100, value = rank_threshold_select, step = 1, post = "%")),
-    column(3, sliderInput(ns(paste0(id_prefix, "scr_rank_threshold_plant")), "分离选单株位次阈值",
-      min = 1, max = 100, value = rank_threshold_plant, step = 1, post = "%")),
+    column(3, sliderInput(ns(paste0(id_prefix, "scr_rank_threshold_select")),
+      sprintf("晋级位次阈值（位次 ≤ N；默认 %d ≈ 前 %.0f%%）",
+              default_thr, DEFAULT_RANK_THRESHOLD_PCT * 100),
+      min = 1, max = thr_max, value = rank_threshold_select, step = 1, post = "")),
+    column(3, sliderInput(ns(paste0(id_prefix, "scr_rank_threshold_plant")),
+      sprintf("分离选单株位次阈值（位次 < N；默认 %d）", default_thr),
+      min = 1, max = thr_max, value = rank_threshold_plant, step = 1, post = "")),
     column(3, numericInput(ns(paste0(id_prefix, "scr_radar_top_n")), "雷达图品种数",
       value = radar_top_n, min = 2, max = 20, step = 1)),
     column(3, checkboxGroupInput(ns(paste0(id_prefix, "scr_exclude_lodging")), "排除倒伏等级",

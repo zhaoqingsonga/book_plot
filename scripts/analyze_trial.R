@@ -41,6 +41,7 @@ usage <- function() {
       "        [--out <输出目录>] [--db <sqlite路径>] [--zip]\n",
       "        [--rank <晋级位次阈值>] [--plant <分离选单株阈值>] [--lodging 9,7]\n",
       "        [--json] [--json-full] [--json-out <文件>]\n\n",
+      "  --rank/--plant 不传时，默认取「参试材料数的前 25%」（不含对照）\n",
       "  --json        以 JSON 输出（摘要 + 三类名单）到 stdout，供脚本/大模型消费\n",
       "  --json-full   额外包含全部原始明细表（体积大，建议配合 --json-out）\n",
       "  --json-out F  把 JSON 写到文件 F（隐含 --json）\n",
@@ -161,6 +162,11 @@ if (!is.null(r$tables$screening_summary)) {
   cat("\n-- 品种筛选 --\n")
   cat(sprintf("   共 %d → 晋级 %d → 分离选单株 %d → 淘汰 %d\n",
               s$total_n, s$promoted_n, s$select_plant_n, s$eliminated_n))
+  if (!is.null(s$rank_threshold_select)) {
+    cat(sprintf("   参试材料 %d，晋级位次阈值 %d（默认 = 前 25%%）\n",
+                if (is.null(s$n_material)) NA else s$n_material,
+                s$rank_threshold_select))
+  }
 }
 
 cat("\n-- 输出 --\n")

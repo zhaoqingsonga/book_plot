@@ -266,6 +266,13 @@ frontmatter (title / type: report / tags / sources / created / updated / 置信�
 
 ---
 
+9. **默认晋级位次阈值 = 参试材料数的前 25%**：`analyze_screening()` 不传
+   `rank_threshold_select` 时自动算 `ceiling(0.25 × 参试材料数)`（**对照小区不计入**，
+   见 `count_materials()`）。N-4.2：380 份参试材料 → 阈值 **95** → 晋级 **76** 份。
+   ⚠️ **阈值 ≠ 晋级份数**：AND 逻辑 + 并列 + 倒伏排除三重折损，实际入选只有
+   阈值的 0.67~0.90 倍（95 → 76 份 = 0.80 倍）。CLI 用 `--rank` 覆盖默认值；
+   App 滑块初值同源，上限随试验规模自适应。
+
 ## 七、交付前自检清单
 
 - [ ] 全部产量/增产/位次数字来自管线 CSV，**没有一个是手算的**

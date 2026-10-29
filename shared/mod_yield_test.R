@@ -614,9 +614,11 @@ yield_test_server <- function(id) {
       req(rv$view_data)
       df_derived <- tryCatch(compute_derived_yield_columns(rv$view_data),
         error = function(e) rv$view_data)
+      # 默认阈值 = 参试材料数的前 25%
+      default_thr <- default_rank_threshold(df_derived)
       params <- list(
-        rank_threshold_select = if (is.null(input$scr_rank_threshold_select)) 60 else input$scr_rank_threshold_select,
-        rank_threshold_plant   = if (is.null(input$scr_rank_threshold_plant)) 60 else input$scr_rank_threshold_plant,
+        rank_threshold_select = if (is.null(input$scr_rank_threshold_select)) default_thr else input$scr_rank_threshold_select,
+        rank_threshold_plant   = if (is.null(input$scr_rank_threshold_plant)) default_thr else input$scr_rank_threshold_plant,
         exclude_lodging        = if (is.null(input$scr_exclude_lodging)) c("9-严重倒", "7-重倒") else input$scr_exclude_lodging,
         radar_top_n            = if (is.null(input$scr_radar_top_n)) 5 else input$scr_radar_top_n
       )
@@ -804,7 +806,7 @@ yield_test_server <- function(id) {
           tags$div(class = "card bg-light mb-3",
             tags$div(class = "card-body py-2",
               tags$h6(class = "card-title mb-2", "调整筛选参数（实时更新，无需重新分析）"),
-              screening_controls_ui(ns)
+              screening_controls_ui(ns, n_material = count_materials(rv$view_data))
             )
           ),
           # 筛选摘要
