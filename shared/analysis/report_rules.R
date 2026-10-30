@@ -36,40 +36,57 @@ RPT_PLOT_REGISTRY <- data.frame(
     "fig_corr_matrix",
     "fig_quality_huase", "fig_quality_yexing", "fig_quality_jiejiaxixing",
     "fig_quality_daofuxing", "fig_quality_rongmaose",
-    "fig_comparison", "fig_radar", "fig_parent_plot"),
+    "fig_comparison", "fig_radar", "fig_parent_plot",
+    "fig_gge_biplot", "fig_gge_heatmap", "fig_gge_ranking"),
   plot_key    = c(
     "yield_dist", "yield_grade_dist", "increase_dist", "growth_dist",
     "scatter_growth", "scatter_height", "scatter_grain",
     "corr_matrix",
     "quality_花色", "quality_叶形", "quality_结荚习性",
     "quality_倒伏性", "quality_茸毛色",
-    "comparison", "radar", "parent_plot"),
+    "comparison", "radar", "parent_plot",
+    "gge_biplot", "gge_heatmap", "gge_ranking"),
   png_name    = c(
     "亩产分布.png", "产量等级分布.png", "增产分布.png", "生育期分布.png",
     "生育期vs产量.png", "株高vs产量.png", "百粒重vs产量.png",
     "性状相关性矩阵.png",
     "性状分布_花色.png", "性状分布_叶形.png", "性状分布_结荚习性.png",
     "性状分布_倒伏性.png", "性状分布_茸毛色.png",
-    "筛选前后性状对比.png", "雷达图.png", "亲本晋级表现.png"),
+    "筛选前后性状对比.png", "雷达图.png", "亲本晋级表现.png",
+    "GGE双标图.png", "GxE互作热图.png", "基因型排名.png"),
   title       = c(
     "小区产量分布", "产量等级分布", "增产率分布", "生育期分布",
     "生育期与亩产关系", "株高与亩产关系", "百粒重与亩产关系",
     "性状相关性矩阵",
     "花色分布", "叶形分布", "结荚习性分布", "倒伏性分布", "茸毛色分布",
-    "筛选前后性状对比", "晋级材料综合表现雷达图", "亲本晋级表现"),
+    "筛选前后性状对比", "晋级材料综合表现雷达图", "亲本晋级表现",
+    "GGE 双标图（品种×地点）", "GGE 稳定性热图", "GGE 品种排名"),
   # 依赖的源字段（拼音列名）。整列为空 ⇒ 该图必空白
   source_cols = c(
     "MuChan", "MuChan", "JiaoPingJunDuiZhaoZengChan", "ShengYuQi",
     "ShengYuQi", "ZhuGao", "BaiLiZhong",
     "ShengYuQi;ZhuGao;BaiLiZhong",
     "HuaSe", "YeXing", "JieJiaXiXing", "DaoFuXing", "RongMaoSe",
-    "MuChan", "MuChan", "JiaoPingJunDuiZhaoWeiCi"),
+    "MuChan", "MuChan", "JiaoPingJunDuiZhaoWeiCi",
+    "MuChan", "MuChan", "MuChan"),
   stringsAsFactors = FALSE
 )
 
 # ------------------------------------------------------------------------------
 # 谓词注册表：每个谓词接收 ctx，返回逻辑值
 # ------------------------------------------------------------------------------
+# 所有表格块的 id（用于「本模板用不到的槽位」清理）
+# ⚠️ RPT_PLOT_REGISTRY 只登记图，不含表；清理未用槽位时要两类 id 都覆盖，
+#    否则 sections 模板里 primary 专属的表槽位（如 {{tbl_cross_stats}}）会残留。
+RPT_TABLE_IDS <- c(
+  "tbl_yield_core", "tbl_growth_bin", "tbl_screening_rules",
+  "tbl_promoted_no_sep", "tbl_promoted_sep", "tbl_threshold_scan",
+  "tbl_ms_threshold_scan",
+  "tbl_cross_stats", "tbl_parent_stats", "tbl_top5",
+  "tbl_cross_location_avg", "tbl_cross_site_matrix", "tbl_gge_stability",
+  "tbl_a4_rounds", "tbl_a4_sources", "tbl_a4_field_eval"
+)
+
 RPT_PREDICATES <- list(
 
   # ① 无对照小区 —— 晋级通道整体不成立
@@ -167,6 +184,12 @@ RPT_PREDICATES <- list(
   # ⑳ 管线出图但报告未采用
   pf_plots_dropped = function(ctx) {
     !is.null(ctx$n_plots_dropped) && ctx$n_plots_dropped > 0
+  },
+
+  # ㉑ 叙述侧车里的计数量与管线实算值不符 ⇒ 报告数字与数据库脱节
+  #   ctx$narrative_mismatch 由 report_preflight() 预先填入（叙述文本 + 事实表比对结果）
+  pf_narrative_number_mismatch = function(ctx) {
+    !is.null(ctx$narrative_mismatch) && ctx$narrative_mismatch > 0
   }
 )
 
@@ -184,7 +207,7 @@ RPT_RULES <- data.frame(
     "missing_yield_materials", "outlier_control", "indoor_grain_not_done",
     "unknown_parent", "stage_eval_field_empty", "plots_without_evaluation",
     "single_replicate", "trait_field_sparse", "separation_in_promoted",
-    "material_count_mismatch", "plots_dropped"),
+    "material_count_mismatch", "plots_dropped", "narrative_number_mismatch"),
   title = c(
     "无对照小区", "关键字段整列为空", "亲本口径退化",
     "亲本口径与筛选口径不一致", "产量等级分布分母含无产量小区",
@@ -193,12 +216,13 @@ RPT_RULES <- data.frame(
     "存在缺产材料", "存在离群对照", "室内考种未开展",
     "父本记为未知", "某期田间评价字段全空", "存在无任何评价的小区",
     "单次重复", "性状字段记录稀疏", "晋级材料中记有性状分离",
-    "参试材料数手填值与管线不符", "管线出图但报告未采用"),
+    "参试材料数手填值与管线不符", "管线出图但报告未采用",
+    "叙述侧车数字与管线不符"),
   predicate = names(RPT_PREDICATES),
   severity = c(
     "blocker", "warn", "warn", "warn", "info", "info", "info", "info",
     "warn", "info", "info", "info", "info", "info", "info", "info", "info",
-    "info", "blocker", "info"),
+    "info", "blocker", "info", "blocker"),
   # scope=trial 的规则：结论句进「试验级结论」，blocks 不消费（留空）
   # scope=block 的规则：结论句挂到 blocks 各块旁。
   #   **blocks 必须是 primary.yml 里真实存在的块 id** —— 指向不存在的块 ⇒
@@ -206,9 +230,10 @@ RPT_RULES <- data.frame(
   scope = c(
     "trial", "trial", "block", "block", "block", "block", "block", "block",
     "trial", "block", "block", "trial", "block", "block", "block", "trial",
-    "block", "block", "trial", "trial"),
+    "block", "block", "trial", "trial", "trial"),
   blocks = c(
-    "", "",
+    "",
+    "",
     "fig_parent_plot",
     "fig_parent_plot,tbl_parent_stats,tbl_cross_stats",
     "fig_yield_grade",
@@ -223,11 +248,11 @@ RPT_RULES <- data.frame(
     "tbl_a4_field_eval",
     "tbl_a4_field_eval",
     "",
-    "tbl_trait_dist",
+    "fig_quality_huase,fig_quality_yexing,fig_quality_rongmaose,fig_quality_jiejiaxixing,fig_quality_daofuxing",
     "tbl_promoted_sep",
     "",
+    "",
     ""),
-  # 文档锚点：指向 skill 里讲这条口径的地方（供人查「为什么这么判」）
   # 「本次新增」= 生成器引入的新规则，skill 散文里本来没有对应条目。
   doc_ref = c(
     "口径与图表分诊.md#三·八 (13) 没有对照小区",
@@ -249,7 +274,8 @@ RPT_RULES <- data.frame(
     "SKILL.md#六-B 陷阱 8 「无记录 ≠ 不分离」",
     "SKILL.md#六-B 陷阱 8 「分离」也有两套口径",
     "口径与图表分诊.md#三·八 (22) 参试材料数不能数行数",
-    "口径与图表分诊.md#三 图表分诊（16 张）"),
+    "口径与图表分诊.md#三 图表分诊（16 张）",
+    "口径与图表分诊.md#三·九 (24) 叙述侧车的数字没人校验"),
   stringsAsFactors = FALSE
 )
 
@@ -314,7 +340,22 @@ rpt_rule_conclusions <- list(
     "元信息里手填的参试材料数 {meta_material_n} 与管线算出的 {n_material} 不一致，",
     "请先核对后再交付。"),
   plots_dropped = paste0(
-    "管线已生成但本报告不予采用的 {n_plots_dropped} 张图：{dropped_plots_reason}")
+    "管线已生成但本报告不予采用的 {n_plots_dropped} 张图：{dropped_plots_reason}"),
+
+  # 叙述侧车的数字与管线不符 —— 动态生成（要逐条列出不一致项）
+  narrative_number_mismatch = function(ctx) {
+    df <- ctx$narrative_mismatch_detail
+    if (is.null(df) || nrow(df) == 0) return(NULL)
+    items <- vapply(seq_len(nrow(df)), function(i) {
+      sprintf("「%s」段落写作 %s，管线实算为 %s（%s）",
+              df$section[i], df$found[i], df$expected[i], df$desc[i])
+    }, character(1))
+    paste0(
+      "叙述侧车（叙述.md）中有 ", nrow(df), " 处计数量与管线实算值不符：",
+      paste(items, collapse = "；"), "。",
+      "叙述段落是人工输入，数字可能手抄漂移；",
+      "请改叙述.md 与管线对齐后重新生成，或直接改用报告正文的机器插值数字。")
+  }
 )
 
 rpt_rule_notes <- list(

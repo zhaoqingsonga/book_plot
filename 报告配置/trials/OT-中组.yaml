@@ -1,0 +1,22 @@
+trial_no: 黄淮多点鉴定-中组
+experiment_id: OT_20260614192610_6432
+stage_no: 5
+体裁: 常规-多点鉴定
+地点: 中组9点
+year: 2025
+source: other_trials
+template: multi_site
+created: 2026-10-29
+updated: 2026-10-29
+screening:
+  mode: multi_site
+  pct: 0.25
+  min_hit_rate: 0.7
+design:
+  ck_variety: 齐黄34
+  ck_interval: 0
+  n_reps: 1
+  blocks: 9
+  arrangement: 多点联合鉴定
+  plot_area_m2: 12.0
+sop_confirmed: false

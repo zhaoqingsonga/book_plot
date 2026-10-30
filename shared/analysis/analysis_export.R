@@ -48,7 +48,6 @@ build_analysis_excel <- function(result, file) {
 
   # Sheet 名映射（中文友好）
   sheet_name_map <- c(
-    promoted       = "晋级材料",
     select_plant   = "分离选单株",
     eliminated     = "淘汰材料",
     description    = "品种描述",
@@ -77,11 +76,25 @@ build_analysis_excel <- function(result, file) {
     progeny_top    = "优良后代",
     morph_stats    = "形态统计",
     export_data    = "原始数据",
+    multi_site_detail = "多点明细",
     gge_yield_growth = "产量生育期"
   )
 
+  # 晋级清单按「有无性状分离」拆两张 sheet（判据与报告正文两张晋级表一致）
+  if (is.data.frame(result$tables$promoted) && nrow(result$tables$promoted) > 0) {
+    sp <- split_promoted_by_segregation(result$tables$promoted)
+    for (pair in list(list("晋级材料-无分离", sp$no_sep),
+                      list("晋级材料-有分离", sp$with_sep))) {
+      if (is.data.frame(pair[[2]]) && nrow(pair[[2]]) > 0) {
+        openxlsx::addWorksheet(wb, pair[[1]])
+        openxlsx::writeData(wb, pair[[1]], pair[[2]])
+      }
+    }
+  }
+
   # 遍历所有 table 写入对应 sheet
   for (nm in names(result$tables)) {
+    if (nm == "promoted") next   # 已按性状分离拆成上面两张 sheet
     tbl <- result$tables[[nm]]
     if (is.data.frame(tbl) && nrow(tbl) > 0) {
       sheet_name <- if (nm %in% names(sheet_name_map)) {

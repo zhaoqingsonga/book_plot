@@ -1,0 +1,17 @@
+trial_no: G-4.2
+experiment_id: YIELD_20260527151903_8122
+stage_no: 4
+体裁: 转基因-初级产比
+地点: 宿州
+year: 2026
+template: primary
+created: 2026-10-30
+updated: 2026-10-30
+design:
+  ck_variety: 中种豆7501GZ
+  ck_interval: 20
+  n_reps: 1
+  blocks: 24
+  arrangement: 间比法顺序排列（每20行设1对照，末位补加对照）
+  plot_area_m2: 9.6
+sop_confirmed: false

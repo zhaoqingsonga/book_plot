@@ -144,6 +144,27 @@ detect_trait_segregation <- function(df) {
   out
 }
 
+#' 把晋级名单按「有无性状分离」拆成两张表
+#'
+#' 判据：晋级表的「性状分离」列非空 = 该材料记有性状分离（需先提纯）。
+#' 与试验报告.md 的「晋级材料——无性状分离 / 有性状分离、需提纯」两张表同源同判据；
+#' Excel 的「晋级材料-无分离 / 晋级材料-有分离」两张 sheet 也走这里。
+#'
+#' @param pr 晋级表（data.frame，需含「性状分离」列）
+#' @return list(no_sep = 无分离的行, with_sep = 有分离的行)
+#' @export
+split_promoted_by_segregation <- function(pr) {
+  if (is.null(pr) || nrow(pr) == 0L) {
+    empty <- if (is.null(pr)) data.frame() else pr
+    return(list(no_sep = empty, with_sep = empty))
+  }
+  sep <- if ("性状分离" %in% names(pr)) as.character(pr[["性状分离"]]) else rep(NA_character_, nrow(pr))
+  sep[is.na(sep)] <- ""
+  sep <- trimws(sep)
+  list(no_sep  = pr[!nzchar(sep), , drop = FALSE],
+       with_sep = pr[nzchar(sep),  , drop = FALSE])
+}
+
 #' 品种筛选分析
 #'
 #' 根据位次阈值、倒伏性等级筛选晋级、高产分离选单株和淘汰材料，

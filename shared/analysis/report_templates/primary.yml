@@ -9,7 +9,6 @@ blocks:
   - {id: fig_yield_grade,     kind: figure, section: "7.1", plot_key: yield_grade_dist}
   - {id: fig_increase,        kind: figure, section: "7.1", plot_key: increase_dist}
   - {id: fig_growth,          kind: figure, section: "7.1", plot_key: growth_dist}
-  - {id: tbl_trait_dist,      kind: table,  section: "7.2", title: "形态性状分布（{n_plots} 小区）"}
   - {id: fig_quality_huase,      kind: figure, section: "7.2", plot_key: "quality_花色"}
   - {id: fig_quality_yexing,     kind: figure, section: "7.2", plot_key: "quality_叶形"}
   - {id: fig_quality_rongmaose,  kind: figure, section: "7.2", plot_key: "quality_茸毛色"}
@@ -27,6 +26,6 @@ blocks:
   - {id: fig_parent_plot,     kind: figure, section: "7.5", plot_key: parent_plot}
   - {id: tbl_top5,            kind: table,  section: "7.6", title: "产量前 5 材料"}
   - {id: fig_radar,           kind: figure, section: "7.6", plot_key: radar}
-  - {id: tbl_a4_rounds,       kind: table,  section: "A.4", title: "四次田间评价"}
+  - {id: tbl_a4_rounds,       kind: table,  section: "A.4", title: "田间评价"}
   - {id: tbl_a4_sources,      kind: table,  section: "A.4", title: "各来源覆盖情况"}
   - {id: tbl_a4_field_eval,   kind: table,  section: "A.4", title: "材料田间评价表（按亩产降序）"}

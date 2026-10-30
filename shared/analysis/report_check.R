@@ -155,11 +155,65 @@ rc_norm_path <- function(p) {
 }
 
 #' 下一行非空内容的行号（找不到则返回 NA）
+#' 解析 wikilink 目标相对哪个基准目录
 #'
+#' 报告里的 wikilink 写成 `[[../2026年试验方案/xxx]]`，`../` 是相对
+#' **vault 里的报告页**（Obsidian `02wiki/02-项目/2026年试验报告/`），
+#' 不是相对报告文件所在目录（书桌项目里的 `分析输出/xxx/报告/`）。
+#'
+#' ⇒ 校验时不能只按报告文件目录找，否则**所有跨目录 wikilink 都会误报失效**。
+#' 这里把候选基准目录依次试一遍，任一命中即算存在。
+#'
+#' @param base_dirs 候选基准目录向量
+#' @param link wikilink 目标（相对路径，无扩展名也可）
+#' @return 命中的基准目录；都没命中返回 NA_character_
+#' @noRd
+rc_resolve_wikilink <- function(base_dirs, link) {
+  for (b in base_dirs) {
+    if (is.na(b) || !nzchar(b)) next
+    p <- rc_norm_path(file.path(b, link))
+    if (file.exists(paste0(p, ".md")) || file.exists(p)) return(b)
+  }
+  NA_character_
+}
+
+#' 默认的 vault 基准目录候选
+#'
+#' 报告里的 wikilink 写成 `[[../2026年试验方案/xxx]]`，`../` 是相对
+#' **vault 里的报告页所在目录**（`02wiki/02-项目/2026年试验报告/`），
+#' `../` 跳一级正好到 `02wiki/02-项目/`。
+#'
+#' ⚠️ `rc_norm_path()` 会把 `..` 折叠掉（它按「规范化路径」设计的），
+#'    所以基准必须选**报告页所在目录**（2026年试验报告/），
+#'    而不是它的父目录 —— 否则 `../` 会被吃掉，链接解析到错误位置。
+#'
+#' 从环境变量 `OBSIDIAN_VAULT` 或默认路径取 vault 根，再向下拼候选基准。
+#' @noRd
+rc_default_vault_roots <- function() {
+  vault_roots <- character(0)
+  env <- Sys.getenv("OBSIDIAN_VAULT", "")
+  if (nzchar(env) && dir.exists(env)) vault_roots <- c(vault_roots, env)
+  default <- path.expand("~/GitHub/Obsidian")
+  if (dir.exists(default) && !(default %in% vault_roots)) vault_roots <- c(vault_roots, default)
+  if (!length(vault_roots)) return(character(0))
+
+  out <- character(0)
+  for (v in vault_roots) {
+    proj <- file.path(v, "02wiki", "02-项目")
+    if (!dir.exists(proj)) next
+    # 报告页所在目录（[[../xxx]] 的真正基准）
+    rpt_dirs <- list.dirs(proj, recursive = FALSE)
+    rpt_dirs <- rpt_dirs[grepl("试验报告$|报告$", basename(rpt_dirs))]
+    out <- c(out, rpt_dirs, proj)
+  }
+  c(out, vault_roots)
+}
+
+#' 下一行非空内容的行号（找不到则返回 NA）
 #' @param lines 行向量
 #' @param idx 当前行号
 #' @return 整数行号或 NA_integer_
-#' @export
+
 rc_next_nonblank <- function(lines, idx) {
   i <- idx + 1L
   n <- length(lines)
@@ -217,6 +271,119 @@ rc_parse_titles <- function(kind, txt, line_starts) {
   data.frame(kind = kind, stage = stage, num = num, bold = bold,
              line = rc_line_index(d$start, line_starts), text = d$text,
              stringsAsFactors = FALSE)
+}
+
+#' 识别报告里的小节标题
+#'
+#' 形如 `### 7.1 产量水平与分布` / `### A.4 材料田间评价表`。
+#'
+#' ⚠️ 编号前缀现在**随小节走**（§七 → `7`，附录 → `A`），所以自检要能回答
+#'    「这张表是不是挂在它该在的小节下」——前缀写错时读者按编号找表会找错表，
+#'    而「引用指向的表存不存在」那类检查**查不出来**。
+#'
+#' 只认 `##`~`####` 级别的标题；`## 七、主要结果`（中文数字）与
+#' `## 附录 A　…` 不匹配数字/字母前缀，故不进结果表。
+#'
+#' @param txt 全文
+#' @param line_starts 每行起始偏移
+#' @return data.frame(section, prefix, line, text)
+#' @export
+rc_parse_sections <- function(txt, line_starts) {
+  pat <- "(?m)^#{2,4}[ \\t]+([0-9]+(?:\\.[0-9]+)*|A(?:\\.[0-9]+)*)(?![0-9A-Za-z.])"
+  d <- rc_grep_all(pat, txt)
+  if (nrow(d) == 0L) {
+    return(data.frame(section = character(0), prefix = character(0),
+                      line = integer(0), text = character(0),
+                      stringsAsFactors = FALSE))
+  }
+  mm <- regmatches(d$text, regexec("^#{2,4}[ \\t]+([0-9]+(?:\\.[0-9]+)*|A(?:\\.[0-9]+)*)", d$text))
+  section <- vapply(mm, function(x) if (length(x) >= 2L) x[2] else NA_character_, character(1))
+  # 前缀 = 段号部分：A.4 → "A"；7.1 → "7"
+  prefix <- sub("\\..*$", "", section)
+  data.frame(section = section, prefix = prefix,
+             line = rc_line_index(d$start, line_starts), text = d$text,
+             stringsAsFactors = FALSE)
+}
+
+#' 表/图编号前缀必须等于它所在小节的编号前缀
+#'
+#' 编号前缀随小节走：`### 7.4` 下的表必须是 `表 7-x`，`### A.4` 下的必须是
+#' `表 A-x`。前缀写错 ⇒ 读者按编号找表会找到别的表。
+#'
+#' 找不到可归属的小节（标题在所有小节之外）时**跳过**该条，不判失败。
+#'
+#' @param titles rc_parse_titles() 的结果
+#' @param secs rc_parse_sections() 的结果
+#' @param label "表" 或 "图"
+#' @return 结果列表
+#' @export
+rc_check_section_prefix <- function(titles, secs, label) {
+  n <- nrow(titles)
+  if (n == 0L) return(list())
+  if (nrow(secs) == 0L) {
+    return(rc_push(list(), sprintf("%s编号前缀 = 所在小节号", label), TRUE,
+                   "报告里没有可识别的小节标题，跳过"))
+  }
+  bad <- character(0)
+  for (i in seq_len(n)) {
+    st <- titles$stage[i]
+    if (is.na(st)) next
+    before <- which(secs$line < titles$line[i])
+    if (length(before) == 0L) next
+    k <- before[length(before)]
+    if (!identical(st, secs$prefix[k])) {
+      bad <- c(bad, sprintf("L%d %s %s（该表在「%s」小节下，前缀应为 %s）",
+                            titles$line[i], label, st, secs$section[k], secs$prefix[k]))
+    }
+  }
+  if (length(bad) == 0L) {
+    rc_push(list(), sprintf("%s编号前缀 = 所在小节号", label), TRUE,
+            sprintf("%d 个%s题都挂在同名小节下", n, label))
+  } else {
+    rc_push(list(), sprintf("%s编号前缀 = 所在小节号", label), FALSE,
+            paste(bad, collapse = "；"))
+  }
+}
+
+#' 两张晋级材料表必须带「田间评价」列
+#'
+#' 晋级材料表原来只有管线数字（亩产/位次），读者看不出这批材料在田里长什么样。
+#' 末列「田间评价」取自附录 A.4 的材料田间评价表（按小区 ID 关联），
+#' 没有田间记录的写「—」。
+#'
+#' 空表（写成「（本次试验无对应数据）」）没有表头可查，**跳过**不判失败。
+#'
+#' @param lines 报告行向量
+#' @return 结果列表
+#' @export
+rc_check_promoted_field_eval <- function(lines) {
+  hit <- grep("^\\*{0,2}表[ \\t]+[0-9A-Za-z]+-[0-9]+.*晋级材料", lines)
+  if (length(hit) == 0L) {
+    return(rc_push(list(), "晋级材料表带「田间评价」列", TRUE,
+                   "报告里没有晋级材料表，跳过"))
+  }
+  checked <- 0L
+  bad <- character(0)
+  for (i in hit) {
+    j <- rc_next_nonblank(lines, i + 1L)
+    if (is.na(j)) next
+    if (!startsWith(trimws(lines[j]), "|")) next   # 空表 / 非表格内容
+    checked <- checked + 1L
+    if (!grepl("田间评价", lines[j], fixed = TRUE)) {
+      bad <- c(bad, sprintf("L%d %s", i, trimws(gsub("\\*", "", lines[i], fixed = TRUE))))
+    }
+  }
+  if (checked == 0L) {
+    return(rc_push(list(), "晋级材料表带「田间评价」列", TRUE,
+                   "晋级材料表为空表，无表头可查"))
+  }
+  if (length(bad) == 0L) {
+    rc_push(list(), "晋级材料表带「田间评价」列", TRUE,
+            sprintf("%d 张晋级材料表都有「田间评价」列", checked))
+  } else {
+    rc_push(list(), "晋级材料表带「田间评价」列", FALSE,
+            paste0("缺「田间评价」列：", paste(bad, collapse = "；")))
+  }
 }
 
 #' 校验图/表编号的「识别数 → 无重号无跳号 → 正文升序」
@@ -285,10 +452,15 @@ rc_check_numbering <- function(titles, label) {
   res
 }
 
-#' 编号前缀一致性（图与表共用一个阶段号；附录统一用 A）
+#' 编号前缀合法性（正文小节号 + 附录 A）
 #'
-#' 合法组合：正文阶段号**恰好一个**（4/5/3…），可选再出现附录前缀 **A**。
-#' 出现别的前缀（如表 4-0 那种 0 号表）→ 判失败。
+#' ⚠️ 2026-10-30 起前缀**随小节走**（§七 → `7`、附录 → `A`），不再固定是
+#'    「试验阶段号」。正文因此**可以有多个**数字前缀（§六、§七、§八 各一个），
+#'    旧规则「正文阶段号应恰好一个」在这种体裁下会误报 —— 改成「至少一个」。
+#'    前缀与所在小节对不对得上，由 `rc_check_section_prefix()` 单独把关。
+#'
+#' 合法组合：正文前缀**至少一个**（全是数字），可选再出现附录前缀 **A**。
+#' 出现别的前缀（既非纯数字也非单字母，如 `4-1` 里的 `4_1`）→ 判失败。
 #'
 #' @param tables 表题表
 #' @param figs 图题表
@@ -310,17 +482,20 @@ rc_check_prefix <- function(tables, figs) {
     return(rc_push(list(), "图/表编号前缀唯一", FALSE,
                    paste0("出现非法前缀：", paste(other, collapse = ","))))
   }
-  if (length(num_st) != 1L) {
-    return(rc_push(list(), "图/表编号前缀唯一", FALSE,
-                   sprintf("正文阶段号应恰好一个，实际 %d 个（%s）",
-                           length(num_st), paste(num_st, collapse = ","))))
+  if (length(num_st) < 1L) {
+    return(rc_push(list(), "图/表编号前缀唯一", FALSE, "正文没有任何数字前缀的表/图题"))
   }
   if (length(app_st) > 1L) {
     return(rc_push(list(), "图/表编号前缀唯一", FALSE,
                    paste0("附录前缀应统一为 A，实际：", paste(app_st, collapse = ","))))
   }
+  if (length(app_st) == 1L && app_st != "A") {
+    return(rc_push(list(), "图/表编号前缀唯一", FALSE,
+                   paste0("附录前缀应为 A，实际：", app_st)))
+  }
   detail <- if (length(app_st) == 1L)
-    sprintf("正文阶段号 %s，附录前缀 %s", num_st, app_st) else paste0("正文阶段号 ", num_st)
+    sprintf("正文小节号前缀 %s，附录前缀 %s", paste(num_st, collapse = "/"), app_st)
+  else sprintf("正文小节号前缀 %s", paste(num_st, collapse = "/"))
   rc_push(list(), "图/表编号前缀唯一", TRUE, detail)
 }
 
@@ -344,6 +519,22 @@ rc_check_title_count_selfconsistent <- function(kind, txt, total) {
 # 「注：」紧邻性
 # ------------------------------------------------------------------------------
 
+#' 判定一行是否为「本项无数据」说明（合法的空表体）
+#'
+#' 口径：三句以内、含「无…记录/数据/来源」且收尾于「不列/不统计/不适用」之类。
+#' 宁可窄，不可误伤 —— 只认明确的"没有这项数据"表述。
+#' @noRd
+rc_is_absent_statement <- function(line) {
+  if (is.na(line) || !nzchar(trimws(line))) return(FALSE)
+  s <- trimws(line)
+  if (nchar(s) > 200) return(FALSE)          # 太长就不是一句话说明了
+  if (grepl("^[|>#-]", s)) return(FALSE)     # 表格行 / 引用 / 标题
+  has_absent <- grepl("无[^。]{0,30}(记录|数据|来源|评价|内容)", s)
+  has_concl  <- grepl("(故|因此)[^。]{0,20}(不列|不统计|不适用|不予)", s) ||
+                grepl("(不列|不统计|不适用)$", sub("[。.]$", "", s))
+  has_absent && has_concl
+}
+
 #' 判定表题之后是否紧邻「注：」
 #'
 #' 口径：表题行 →（可空行）→ Markdown 表格块（连续以 `|` 开头的行）→
@@ -360,6 +551,20 @@ rc_table_has_note <- function(lines, title_idx) {
     n <- length(lines)
     while (i <= n && grepl("^[ \t]*\\|", lines[i])) i <- i + 1L
     j <- rc_next_nonblank(lines, i - 1L)
+    if (is.na(j)) return(list(ok = FALSE, note_idx = NA_integer_))
+    i <- j
+  } else if (grepl("^_[（(].*[）)]_\\s*$", lines[i])) {
+    # 空表占位：rpt_md_table() 对空 data.frame 返回「_（本次试验无对应数据）_」。
+    # 这是**合法的表体**（说明"本试验无此项数据"），不是缺失 ⇒ 跳过它继续找注。
+    j <- rc_next_nonblank(lines, i)
+    if (is.na(j)) return(list(ok = FALSE, note_idx = NA_integer_))
+    i <- j
+  } else if (rc_is_absent_statement(lines[i])) {
+    # 「无数据说明」表体：块函数在数据整列为空时给出的一句明确交代
+    # （如「本试验**无分期田间评价记录**…故本表不列。」）。
+    # 这同样是合法表体 —— 报告如实说明了"没有这项数据"，
+    # 比留一个空槽或塞一行"无"更清楚。⇒ 跳过它继续找注。
+    j <- rc_next_nonblank(lines, i)
     if (is.na(j)) return(list(ok = FALSE, note_idx = NA_integer_))
     i <- j
   }
@@ -471,11 +676,12 @@ rc_hit_context <- function(pattern, txt, line_starts, lines, k = 3L) {
 #' @param strict TRUE 时警告项也计入失败
 #' @return list(path, summary, results, n_pass, n_fail, n_warn, n_total, ok)
 #' @export
-rc_check_report <- function(path, strict = FALSE) {
+rc_check_report <- function(path, strict = FALSE, vault_roots = NULL) {
   rep <- rc_read_report(path)
   lines <- rep$lines
   txt <- rep$text
   base <- dirname(path)
+  if (is.null(vault_roots)) vault_roots <- rc_default_vault_roots()
   line_starts <- cumsum(c(1, nchar(lines) + 1))
 
   res <- list()
@@ -513,6 +719,14 @@ rc_check_report <- function(path, strict = FALSE) {
   res <- c(res, rc_check_prefix(tables, figs))
   res <- c(res, rc_check_numbering(tables, "表"))
   res <- c(res, rc_check_numbering(figs, "图"))
+
+  # ---------- 3b. 编号前缀 = 所在小节号（编号随小节走） ----------
+  secs <- rc_parse_sections(txt, line_starts)
+  res <- c(res, rc_check_section_prefix(tables, secs, "表"))
+  res <- c(res, rc_check_section_prefix(figs, secs, "图"))
+
+  # ---------- 3c. 两张晋级材料表带「田间评价」列 ----------
+  res <- c(res, rc_check_promoted_field_eval(lines))
 
   # ---------- 4. 每张图 / 表后有紧邻的「注：」 ----------
   tab_missing <- character(0)
@@ -592,15 +806,16 @@ rc_check_report <- function(path, strict = FALSE) {
   }
 
   # ---------- 6. wikilink 指向的页面真实存在 ----------
+  # ⚠️ 基准目录不止一个：报告里的 [[../xxx]] 是相对 **vault 里的报告页**，
+  #    不是相对报告文件所在目录。候选基准依次试，任一命中即算存在。
   wl <- rc_grep_all("\\[\\[([^\\]|#]+)", txt)
   wl_links <- if (nrow(wl) == 0L) character(0) else
     sub("^\\[\\[([^\\]|#]+)$", "\\1", wl$text, perl = TRUE)
   wl_missing <- character(0)
+  wl_base_dirs <- c(base, vault_roots)
   for (l in unique(wl_links)) {
-    p <- rc_norm_path(file.path(base, l))
-    if (!(file.exists(paste0(p, ".md")) || file.exists(p))) {
-      wl_missing <- c(wl_missing, l)
-    }
+    hit <- rc_resolve_wikilink(wl_base_dirs, l)
+    if (is.na(hit)) wl_missing <- c(wl_missing, l)
   }
   res <- rc_push(res, sprintf("%d 条 wikilink 指向的页面均存在", length(unique(wl_links))),
                  length(wl_missing) == 0L,

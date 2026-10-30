@@ -1,0 +1,93 @@
+## 七、主要结果
+
+### 7.1 产量水平与分布
+
+{{n_with_yield}} 个有产量小区（含对照）平均亩产 {{mean_all}} kg，中位数 {{median_all}} kg，标准差 {{sd_all}} kg，变异系数 {{cv_all}}%；对照基准 {{ck_mean}} kg/亩（{{ck_n}} 个有效对照，范围 {{ck_min}}–{{ck_max}} kg/亩）。{{n_material}} 份参试材料共 {{n_mat_yield}} 个材料·点次有实收产量，均值 {{mat_mean}} kg/亩（SD {{mat_sd}}，CV {{mat_cv}}%），其中 {{below_ck_n}} 个材料·点次（{{below_ck_pct}}%）低于对照基准。产量 200 kg/亩以上的材料·点次 {{grade_ge200_n}} 个（{{grade_ge200_pct}}%）。
+
+> 口径说明：本节统计的是**小区记录**（1 份材料 × 1 个试点 = 1 条记录），因此 {{n_with_yield}} 是「材料·点次」数，不是材料份数。材料份数为 {{n_material}} 份。多点试验中这两者相差试点数倍，混用会把材料份数放大。
+
+{{tbl_yield_core}}
+
+{{fig_yield_dist}}
+
+{{fig_yield_grade}}
+
+{{fig_increase}}
+
+{{fig_growth}}
+
+### 7.2 跨点表现与稳定性
+
+多点鉴定的核心是**跨点表现**，不是单点极值。把同一材料在各试点的产量汇总后，按跨点平均亩产排序，并统计其较对照增产的试点个数（增产点次）。增产点次越多，说明该材料在不同生态条件下越能稳定超过对照；只在个别试点冒尖、其余试点平产或减产的材料，不适合作为广适性品种推广。
+
+{{tbl_cross_location_avg}}
+
+各点在 {{ref_tbl_cross_location_avg}} 中给出跨点汇总；逐点的产量矩阵见{{ref_tbl_cross_site_matrix}}，可以直观看出材料在哪些试点表现好、哪些试点掉队。
+
+{{tbl_cross_site_matrix}}
+
+品种与地点之间存在互作（同一品种在不同试点的相对位次会变化）。GGE 双标图把一个材料的「平均表现」与「随环境波动的程度」画在同一张图上：越靠右表示平均产量越高，越靠近横轴表示跨点越稳定。稳定性参数表紧随其后。
+
+{{fig_gge_biplot}}
+
+{{fig_gge_heatmap}}
+
+{{tbl_gge_stability}}
+
+{{fig_gge_ranking}}
+
+### 7.3 形态性状分布
+
+参试材料的形态性状记录完整度与分布如下：{{trait_dist_text}}
+
+{{fig_quality_huase}}
+
+{{fig_quality_yexing}}
+
+{{fig_quality_rongmaose}}
+
+{{fig_quality_jiejiaxixing}}
+
+{{fig_quality_daofuxing}}
+
+### 7.4 生育期与产量的关系
+
+在 {{n_mat_yield}} 个材料·点次中，生育期与亩产的相关系数为 {{corr_growth_yield}}（材料层，n = {{corr_growth_yield_n}}）。材料生育期均值 {{mat_growth_mean}} 天（{{mat_growth_n}} 份有记载），对照生育期均值 {{ck_growth_mean}} 天（{{ck_growth_n}} 个小区），全部小区生育期均值 {{growth_mean}} 天（中位 {{growth_median}}，区间 {{growth_min}}–{{growth_max}} 天）。生育期跨度本身也反映了试点间的生态差异。生育期分箱后的产量水平见{{ref_tbl_growth_bin}}。
+
+{{tbl_growth_bin}}
+
+{{fig_scatter_growth}}
+
+株高与亩产的关系见下图。多点试验里株高受试点影响很大（同一材料在不同试点的株高可差 20 cm 以上），因此株高与产量的相关性在不同试点可能方向相反，解读时需结合具体试点。
+
+{{fig_scatter_height}}
+
+{{plots_dropped_statement}}
+
+### 7.5 筛选与晋级结果
+
+**本节口径与单点产比试验不同。** 单点产比按「较临近对照位次 + 较平均对照位次同时不高于阈值」晋级，一个材料在**任意一个试点**达标即算晋级——这个口径放在多点试验上会失效：以本组 {{n_material}} 份材料实测，若按单点口径筛选会有 {{n_material}} 份全部「晋级」、晋级率 100%，完全失去区分度，因为几乎没有材料在所有试点都表现很差。
+
+因此多点鉴定采用**跨点稳定性口径**：① 每个试点单独排名，取该点参试材料数的前 {{ms_pct_pct}}% 入围；② 一个材料必须在 **≥{{ms_hit_pct}}% 的试点**（即 {{ms_need_hits}} 个点及以上）都进入前 {{ms_pct_pct}}%，才算晋级。
+
+按此口径，本组晋级 {{promoted_n}} 份（占 {{n_material}} 份材料的 {{promoted_pct}}%），其中 {{promoted_no_sep_n}} 份未记性状分离（{{ref_tbl_promoted_no_sep}}），{{promoted_sep_n}} 份记有性状分离、需提纯（{{ref_tbl_promoted_sep}}）。多点晋级口径（每点入围比例 × 跨点出现率要求）的敏感性见{{ref_tbl_ms_threshold_scan}}。
+
+{{tbl_screening_rules}}
+
+{{tbl_promoted_no_sep}}
+
+{{tbl_promoted_sep}}
+
+{{fig_comparison}}
+
+{{tbl_ms_threshold_scan}}
+
+### 7.6 推荐材料
+
+跨点平均亩产前 5 的材料见{{ref_tbl_top5}}，综合性能比较见{{ref_fig_radar}}。推荐时应同时看三项：跨点平均亩产、增产点次、GGE 稳定性；只看平均产量会漏掉「平均高但波动大」的材料。
+
+{{tbl_top5}}
+
+{{fig_radar}}
+
+<<优异材料叙述>>

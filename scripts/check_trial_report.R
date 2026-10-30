@@ -24,19 +24,27 @@ source(file.path(.project_root, "shared/analysis/report_check.R"))
 
 usage <- function() {
   cat("试验报告交付自检（对照 trial-report-writer skill §七 清单）\n\n",
-      "  Rscript scripts/check_trial_report.R <报告.md> [--strict] [--json]\n\n",
-      "  --strict  把警告项也当失败（退出码 1）\n",
-      "  --json    以 JSON 输出（机器可读）\n", sep = "")
+      "  Rscript scripts/check_trial_report.R <报告.md> [--strict] [--json]\n",
+      "  Rscript scripts/check_trial_report.R <报告.md> --vault-root <目录>\n\n",
+      "  --strict       把警告项也当失败（退出码 1）\n",
+      "  --json         以 JSON 输出（机器可读）\n",
+      "  --vault-root   追加一个 wikilink 解析基准目录（可重复）。\n",
+      "                 报告里的 [[../xxx]] 是相对 Obsidian vault 里的报告页，\n",
+      "                 默认自动用 ~/GitHub/Obsidian/02wiki/02-项目 作基准。\n", sep = "")
 }
 
 parse_args <- function(args) {
-  opt <- list(report = NULL, strict = FALSE, json = FALSE)
+  opt <- list(report = NULL, strict = FALSE, json = FALSE, vault_roots = character(0))
   i <- 1
   while (i <= length(args)) {
     a <- args[i]
     switch(a,
       "--strict" = { opt$strict <- TRUE; i <- i + 1 },
       "--json"   = { opt$json   <- TRUE; i <- i + 1 },
+      "--vault-root" = {
+        if (i < length(args)) { opt$vault_roots <- c(opt$vault_roots, args[i + 1]); i <- i + 2 }
+        else { opt$vault_roots <- c(opt$vault_roots, "."); i <- i + 1 }
+      },
       "--help"   = { usage(); quit(status = 0) },
       {
         if (startsWith(a, "-")) {
@@ -71,7 +79,8 @@ if (!file.exists(opt$report)) {
   quit(status = 1)
 }
 
-res <- rc_check_report(opt$report, strict = opt$strict)
+res <- rc_check_report(opt$report, strict = opt$strict,
+                      vault_roots = c(rc_default_vault_roots(), opt$vault_roots))
 
 ok_rows <- Filter(function(r) isTRUE(r$passed), res$results)
 bad_rows <- Filter(function(r) !isTRUE(r$passed) && identical(r$severity, "error"), res$results)

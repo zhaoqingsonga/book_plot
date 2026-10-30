@@ -280,6 +280,82 @@ extract_timeline_notes <- function(md_path, id_pattern = "^[A-Z]\\d{2}[A-Z]\\d{3
   res[order(res$id, res$round_idx), , drop = FALSE]
 }
 
+#' 从 md 巡田时间线里解析「评价轮次」小节
+#'
+#' 时间线 md 里有一张 `## 评价轮次` 表（轮次 / 日期 / 生育期 / 评价材料数），
+#' 是报告附录 A.1「田间评价」表的**直接来源**——比「按日期标签聚合条目」口径更准，
+#' 因为 md 里的「评价材料数」是编者按轮次核过的口径。
+#'
+#' ⚠️ 与 `extract_timeline_notes()` 的区别：后者返回**长表**
+#'   （一行 = 一个 ID × 一轮评价，列 id/date_tag/text/round_idx），
+#'   **不能**当轮次汇总用——早先 `rpt_blk_tbl_a4_rounds()` 正是这么用的，
+#'   结果把 ID 填进了「日期」列、把内容整列填成「—」。
+#'
+#' @param md_path 时间线 md 路径
+#' @return data.frame(轮次, 日期, 生育期, 评价材料数)；解析不到时返回 NULL
+#' @export
+extract_rounds_summary <- function(md_path) {
+  if (!is.character(md_path) || length(md_path) != 1L || is.na(md_path) ||
+      !nzchar(trimws(md_path))) return(NULL)
+  if (!file.exists(md_path)) return(NULL)
+  lines <- tryCatch(readLines(md_path, encoding = "UTF-8", warn = FALSE),
+                    error = function(e) character(0))
+  if (!length(lines)) return(NULL)
+
+  # ---- 定位「评价轮次」小节 ----
+  head_line <- grep("^#{1,6}\\s*评价轮次\\s*$", lines)
+  if (!length(head_line)) return(NULL)
+  i0 <- head_line[1] + 1L
+  if (i0 > length(lines)) return(NULL)
+  next_head <- grep("^#{1,6}\\s", lines[i0:length(lines)])
+  i1 <- if (length(next_head)) i0 + next_head[1] - 2L else length(lines)
+  if (i1 < i0) return(NULL)
+  seg <- lines[i0:i1]
+
+  # ---- 表格行：列数**不固定**，按表头自适应 ----
+  # N-4.2 的轮次表是 4 列：| 轮次 | 日期 | 生育期 | 评价材料数 |
+  # N-9.9 的轮次表是 3 列：| 轮次 | 日期 |          | 评价材料数 |   ← 没有「生育期」
+  # 原先硬编码 4 列正则 ⇒ 3 列表格一条都匹配不到 ⇒ 返回 NULL
+  # ⇒ 上层 rpt_field_notes_bundle 的 tryCatch 吞掉错误 ⇒ A.4 整段留白。
+  # 现在按「按 | 切分后取单元数」自适应：列数取表头行的单元数。
+  cell_split <- function(l) {
+    # ⚠️ sub() 的 pattern 是正则：`^\\|` 会被当成「锚点 或 空」，
+    #    要把 | 当字面量必须 fixed=TRUE 或用 "[|]"。
+    l <- gsub("^[|]", "", l)
+    l <- gsub("[|][[:space:]]*$", "", l)
+    trimws(strsplit(l, "[|]", perl = TRUE)[[1]])
+  }
+  row_cells <- lapply(seg, cell_split)
+  is_tbl <- vapply(seg, function(l) grepl("^[|]", trimws(l)), logical(1))
+  row_cells <- row_cells[is_tbl]
+  if (!length(row_cells)) return(NULL)
+
+  # 找表头行（含「轮次」）
+  head_i <- which(vapply(row_cells, function(cs)
+    length(cs) >= 3L && any(cs == "轮次"), logical(1)))
+  if (!length(head_i)) return(NULL)
+  hdr <- row_cells[[head_i[1]]]
+  ncol_tbl <- length(hdr)
+
+  # 只留与表头同列数的数据行（跳过表头、分隔行）
+  body <- row_cells[vapply(row_cells, length, integer(1)) == ncol_tbl]
+  body <- body[vapply(body, function(cs) !grepl("^-+$", cs[1]) && cs[1] != "轮次",
+                      logical(1))]
+  if (!length(body)) return(NULL)
+
+  df <- as.data.frame(do.call(rbind, body), stringsAsFactors = FALSE)
+  names(df) <- hdr
+  # 「生育期」列可能不存在 ⇒ 补空列，保持下游模板取用不出错
+  if (!"生育期" %in% names(df)) df$生育期 <- NA_character_
+  if (!"评价材料数" %in% names(df)) return(NULL)
+
+  df$轮次 <- suppressWarnings(as.integer(df$轮次))
+  df$评价材料数 <- suppressWarnings(as.integer(df$评价材料数))
+  df <- df[!is.na(df$轮次), , drop = FALSE]
+  if (!nrow(df)) return(NULL)
+  df[order(df$轮次), , drop = FALSE]
+}
+
 # ==============================================================================
 # ② + ③ 数据库田间备注 / 分期田间评价
 # ==============================================================================

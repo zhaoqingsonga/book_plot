@@ -204,6 +204,7 @@ run_yield_test_analysis <- function(df, trial_info, has_traits, screening_params
           plots$gge_heatmap   <- gge$heatmap
           plots$gge_heatmap_height <- if (!is.null(gge$heatmap_height)) gge$heatmap_height else 500
           plots$gge_ranking   <- gge$ranking
+          tables$gge_stability <- gge$stability_table
           tables$gge_stable   <- gge$stable_genotypes
           tables$gge_unstable <- gge$unstable_genotypes
           tables$gge_env      <- gge$env_summary
@@ -313,12 +314,22 @@ run_line_selection_analysis <- function(df, trial_info, has_traits) {
 # ==============================================================================
 
 build_yield_overview_table <- function(df) {
+  # 杂交组合数只按**材料**计：对照小区的 ma/pa 为空，
+  # paste(NA, NA, sep="×") 得到的 "NA×NA" 不是 NA，na.rm=TRUE 剔不掉，
+  # 会把对照算成第 N 个「杂交组合」。
+  combo_key <- NULL
+  if (all(c("ma", "pa") %in% colnames(df))) {
+    combo_key <- paste(df$ma, df$pa, sep = "×")
+    is_mat <- rep(TRUE, nrow(df))
+    if ("is_ck" %in% colnames(df)) is_mat <- as.integer(df$is_ck) != 1L
+    combo_key[!is_mat | is.na(df$ma) | is.na(df$pa)] <- NA_character_
+  }
   data.frame(
     指标 = c("总记录数", "材料/品种数", "杂交组合数", "地点数", "重复数",
              if ("is_ck" %in% colnames(df)) "对照数" else NULL),
     数值 = c(nrow(df),
       if ("name" %in% colnames(df)) dplyr::n_distinct(df$name, na.rm = TRUE) else nrow(df),
-      if (all(c("ma", "pa") %in% colnames(df))) dplyr::n_distinct(paste(df$ma, df$pa, sep = "×"), na.rm = TRUE) else NA_integer_,
+      if (!is.null(combo_key)) dplyr::n_distinct(combo_key, na.rm = TRUE) else NA_integer_,
       if ("place" %in% colnames(df)) dplyr::n_distinct(df$place, na.rm = TRUE) else 1L,
       if ("rp" %in% colnames(df)) dplyr::n_distinct(df$rp, na.rm = TRUE) else 1L,
       if ("is_ck" %in% colnames(df)) sum(as.integer(df$is_ck) == 1L, na.rm = TRUE) else NA_integer_),
@@ -342,6 +353,11 @@ build_cross_location_avg_table <- function(df) {
 
   gen_col <- if ("stageid" %in% colnames(df)) "stageid" else "name"
   id_cols <- intersect(c("name", "stageid", "ma", "pa"), colnames(df))
+  # ⚠️ 对照不计入「材料」：对照行的 name 常带「（CK）」后缀，
+  #    不过滤会被当成第 N 份材料（实测北组 56 份材料被算成 57 份）。
+  if ("is_ck" %in% colnames(df)) {
+    df <- df[!(suppressWarnings(as.integer(as.character(df$is_ck))) %in% 1L), , drop = FALSE]
+  }
 
   # 先按品种+地点聚合（取地点内平均），再按品种跨地点聚合
   agg_cols <- intersect(c("MuChan", "JiaoLinJinDuiZhaoZengChan", "JiaoLinJinDuiZhaoWeiCi",
@@ -360,7 +376,8 @@ build_cross_location_avg_table <- function(df) {
       增产点次               = if ("JiaoLinJinDuiZhaoZengChan" %in% colnames(.)) {
                                   sum(JiaoLinJinDuiZhaoZengChan > 0, na.rm = TRUE)
                                 } else 0L,
-      地点数                 = dplyr::n_distinct(place),
+      # 有效点数 = 该材料**有产量数据**的试点数（未测产的点不计入分母）
+      地点数                 = sum(!is.na(MuChan)),
       较临近对照增产_pct     = if ("JiaoLinJinDuiZhaoZengChan" %in% colnames(.)) {
                                   round(mean(JiaoLinJinDuiZhaoZengChan, na.rm = TRUE), 1)
                                 } else NA_real_,

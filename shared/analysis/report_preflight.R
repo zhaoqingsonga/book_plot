@@ -126,6 +126,7 @@ rpt_dropped_reason <- function(triage) {
 #' @export
 report_preflight <- function(result, ctx = NULL, meta = NULL,
                              parent_threshold = 60L,
+                             narrative = NULL, facts = NULL,
                              rules = RPT_RULES, predicates = RPT_PREDICATES) {
 
   if (is.null(ctx)) {
@@ -137,6 +138,21 @@ report_preflight <- function(result, ctx = NULL, meta = NULL,
   triage <- rpt_triage_plots(result, ctx)
   ctx$n_plots_dropped      <- sum(triage$verdict %in% c("drop", "degenerate"))
   ctx$dropped_plots_reason <- rpt_dropped_reason(triage)
+
+  # ---- 叙述侧车数字校验（规则 ㉑）----
+  # 表和摘要的数字由 facts 插值，天然与管线同源；叙述段落是自由文本，
+  # 手抄错了没人发现 ⇒ 这里拿叙述文本与事实表逐条比对。
+  if (!is.null(narrative) && !is.null(facts)) {
+    mm <- tryCatch(rpt_check_narrative_numbers(narrative, facts),
+                   error = function(e) NULL)
+    if (!is.null(mm) && nrow(mm) > 0) {
+      ctx$narrative_mismatch      <- nrow(mm)
+      ctx$narrative_mismatch_detail <- mm
+    } else {
+      ctx$narrative_mismatch      <- 0L
+      ctx$narrative_mismatch_detail <- NULL
+    }
+  }
 
   # ---- 逐条跑规则 ----
   trig <- list()

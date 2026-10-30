@@ -15,10 +15,113 @@
 # 依赖：shared/analysis/report_rules.R
 # ==============================================================================
 
-# 报告关心的「整列全空」字段（考种 / 株高）
+#' 报告关心的「整列全空」字段（考种 / 株高）
 RPT_GRAIN_TRAIT_COLS <- c("ZhuGao", "BaiLiZhong")
 
-# 报告关心的「田间评价」字段（三期评价）
+# ==============================================================================
+# 叙述侧车数字校验
+# ------------------------------------------------------------------------------
+# 背景：叙述.md（人工唯一输入）会被原样填进报告的 <<留白>>。
+#   表和摘要的数字都由 facts 插值，天然与管线同源；但**叙述段落是自由文本**，
+#   里面的数字如果手抄错了，没有任何机制能发现 —— 「禁止手算」这条铁律
+#   在叙述段落上是失效的。
+# 本函数做两件事：
+#   ① 对**有明确口径**的计数量（材料数/对照数/小区数/区组数…），
+#      在叙述文本里找出「数字 + 计数量词」的表述，与管线实算值比对；
+#      对不上 ⇒ 报告里的数字与数据库脱节 ⇒ blocker。
+#   ② 对**无法对应口径**的数字（占比、均值、天数等）不做判定 ——
+#      宁可漏报，不可误伤。
+# ==============================================================================
+
+# 可校验口径表：ctx/facts 字段名 → 该口径的中文说法（正则里的关键词）
+# 值取自 facts（管线实算），每条给一组正则，命中后取捕获的数字比对。
+#
+# ⚠️ 正则必须**足够窄**，否则误报：
+#   · 「每 20 个小区设 1 个对照小区」—— 这里的 1 是**对照间隔**，不是对照小区数
+#     ⇒ 对照数只认「(共|共设|另有) N 个对照小区 / N 份对照」这种总量表述
+#   · 「17 个杂交组合各有 1 份材料」—— 子句里的数字不是组合总数
+#     ⇒ 组合数只认「(来源于|来自|统计为) N 个杂交组合」
+#   · 「共 400 个小区」—— 这个是可靠的总量表述
+# 一条口径允许多个正则（写法变体），任一命中即校验。
+RPT_NARRATIVE_CHECKS <- list(
+  list(key = "n_material", fact = "n_material", desc = "参试材料份数",
+       re = c("(?:参试材料共|共参试材料|参试材料)\\s*([0-9]+)\\s*份",
+              "([0-9]+)\\s*份参试材料")),
+  list(key = "n_ck", fact = "n_ck", desc = "对照小区数",
+       re = c("(?:共设|共有|另有|共)\\s*([0-9]+)\\s*个对照小区",
+              "([0-9]+)\\s*份对照")),
+  list(key = "n_plots", fact = "n_plots", desc = "小区总数",
+       re = c("共\\s*([0-9]+)\\s*个小区")),
+  list(key = "n_with_yield", fact = "n_with_yield", desc = "有产量小区数",
+       re = c("([0-9]+)\\s*个有产量小区")),
+  list(key = "promoted_n", fact = "promoted_n", desc = "晋级材料份数",
+       re = c("晋级材料\\s*([0-9]+)\\s*份")),
+  list(key = "n_combos", fact = "n_combos", desc = "杂交组合数",
+       re = c("(?:来源于|来自|统计为)\\s*([0-9]+)\\s*个杂交组合")),
+  list(key = "blocks", fact = "blocks", desc = "区组数",
+       re = c("(?:共设|共|设)\\s*([0-9]+)\\s*个区组")),
+  list(key = "n_reps", fact = "n_reps", desc = "重复次数",
+       re = c("([0-9]+)\\s*次重复")),
+  list(key = "plot_area_m2", fact = "plot_area_m2", desc = "小区面积",
+       # ⚠️ 单位里的 ² 是上标 U+00B2，不是 ASCII '2' ⇒ 正则里两种都要写
+       re = c("小区面积\\s*([0-9.]+)\\s*(?:平方米|㎡|平米|m²|m\\^?2)",
+              "小区面积\\s*([0-9.]+)\\s*m2"))
+)
+
+#' 校验叙述侧车里的计数量是否与管线一致
+#'
+#' @param narrative 叙述侧车解析结果（named list：段落名 → 文本）
+#' @param facts 事实表（rpt_derive_facts() 的返回值）
+#' @return data.frame：section / desc / found / expected / text
+#'   found=叙述里写的数字，expected=管线实算值
+#' @export
+rpt_check_narrative_numbers <- function(narrative, facts) {
+  empty <- data.frame(section = character(), desc = character(), found = character(),
+                      expected = character(), text = character(),
+                      stringsAsFactors = FALSE)
+  if (is.null(narrative) || length(narrative) == 0) return(empty)
+  if (is.null(facts)) return(empty)
+
+  rows <- list()
+  for (sec in names(narrative)) {
+    txt <- narrative[[sec]]
+    if (is.null(txt) || !nzchar(trimws(txt))) next
+    for (chk in RPT_NARRATIVE_CHECKS) {
+      exp_val <- facts[[chk$fact]]
+      if (is.null(exp_val) || length(exp_val) != 1L) next
+      if (is.na(suppressWarnings(as.numeric(exp_val)))) next
+      exp_num <- suppressWarnings(as.numeric(exp_val))
+
+      for (re in chk$re) {
+        m <- gregexpr(re, txt, perl = TRUE)
+        hits <- regmatches(txt, m)[[1]]
+        if (length(hits) == 0) next
+        for (h in hits) {
+          cm <- regmatches(h, regexec(re, h, perl = TRUE))[[1]]
+          if (length(cm) < 2L) next
+          got <- suppressWarnings(as.numeric(cm[2]))
+          if (is.na(got)) next
+          # 数值型口径按容差比对（面积可能是小数），整数口径要求精确相等
+          same <- if (abs(exp_num - round(exp_num)) < 1e-9) {
+            abs(got - exp_num) < 1e-9
+          } else {
+            abs(got - exp_num) <= max(0.01, abs(exp_num) * 1e-6)
+          }
+          if (!same) {
+            rows[[length(rows) + 1]] <- data.frame(
+              section = sec, desc = chk$desc,
+              found = format(got), expected = format(exp_num),
+              text = h, stringsAsFactors = FALSE)
+          }
+        }
+      }
+    }
+  }
+  if (length(rows) == 0) return(empty)
+  do.call(rbind, rows)
+}
+
+#' 报告关心的「田间评价」字段（三期评价）
 RPT_FIELD_EVAL_COLS <- c(
   苗期   = "MiaoQiTianJianPingJia",
   花期   = "HuaQiTianJianPingJia",
@@ -87,7 +190,19 @@ compute_report_stats <- function(result, meta = NULL, parent_threshold = 60L) {
 
   # ---- 缺产材料 ----
   missing_mat <- mat_rows[is.na(mat_rows$MuChan), , drop = FALSE]
-  n_material  <- length(unique(mat_rows$stageid))
+  # 参试材料份数 = **去重后的材料个体数**，不是记录行数。
+  # ⚠️ 单点试验里 stageid 唯一，按 stageid 去重即可；
+  #    多点试验里同一材料在每个点各一行（56 个品种 × 11 点 = 616 行），
+  #    只按 stageid 去重仍会得到 616（多点场景下 stageid 已被写成品种名，
+  #    但同一品种在 11 个点的 stageid 相同，去重后本应是 56）——
+  #    关键是**必须在 name 上去重**，因为 name 才是品种标识。
+  #    实测：黄淮多点鉴定-北组 被算成 616 份（实为 56 份），
+  #    导致叙述侧车数字校验误报、摘要数字全错。
+  mat_key <- if ("name" %in% names(mat_rows)) mat_rows$name else mat_rows$stageid
+  n_material  <- length(unique(mat_key[!is.na(mat_key) & nzchar(as.character(mat_key))]))
+  # 多点数（用于报告里区分「材料数」与「材料·点次」两个口径）
+  n_place <- if ("place" %in% names(df))
+    length(unique(df$place[!is.na(df$place) & nzchar(as.character(df$place))])) else 1L
 
   # ---- 位次 ----
   max_avg_rank <- suppressWarnings(max(df$JiaoPingJunDuiZhaoWeiCi, na.rm = TRUE))
@@ -207,6 +322,10 @@ compute_report_stats <- function(result, meta = NULL, parent_threshold = 60L) {
     max_avg_ck_rank = max_avg_rank,
     screening_threshold = g("rank_threshold_select"),
     parent_threshold = parent_threshold,
+    # 多点鉴定口径参数（screening_summary 里由 build_trial_report.R 写入）
+    ms_pct = { v <- g("pct"); if (!is.null(v) && is.finite(v)) as.numeric(v) else NA_real_ },
+    ms_min_hit_rate = { v <- g("min_hit_rate"); if (!is.null(v) && is.finite(v)) as.numeric(v) else NA_real_ },
+    ms_need_hits = { v <- g("need_hits"); if (!is.null(v) && is.finite(v)) as.integer(v) else NA_integer_ },
 
     promoted_n = g("promoted_n", 0L),
     segregated_n = g("segregated_n", 0L),

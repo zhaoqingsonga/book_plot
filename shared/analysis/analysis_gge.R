@@ -214,6 +214,25 @@ analyze_gge <- function(df, trial_info) {
       sd_data$Mean_Yield >= my & sd_data$Stability >  ms ~ "高产不稳",
       sd_data$Mean_Yield <  my & sd_data$Stability <= ms ~ "低产稳定",
       TRUE ~ "低产不稳")
+    # 稳定性参数全表（报告表 tbl_gge_stability 的唯一数据源）
+    # ⚠️ Genotype 标签形如 "stageid<name" ⇒ 拆成「编号」「品种」两列
+    #    （与 stable/unstable 两表的拆法一致）。
+    st_tbl <- sd_data
+    if ("Genotype" %in% names(st_tbl)) {
+      parts <- strsplit(as.character(st_tbl$Genotype), "<", fixed = TRUE)
+      st_tbl$编号 <- vapply(parts, `[`, character(1), 1L)
+      st_tbl$品种 <- vapply(parts, function(x) if (length(x) > 1) x[2] else x[1], character(1))
+      st_tbl <- st_tbl[, c("编号", "品种", "Mean_Yield", "Stability", "Category"), drop = FALSE]
+      names(st_tbl)[names(st_tbl) == "Mean_Yield"] <- "平均亩产"
+      names(st_tbl)[names(st_tbl) == "Stability"] <- "稳定性"
+      names(st_tbl)[names(st_tbl) == "Category"]   <- "类型"
+      for (cc in c("平均亩产", "稳定性")) {
+        st_tbl[[cc]] <- round(as.numeric(st_tbl[[cc]]), 2)
+      }
+      st_tbl <- st_tbl[order(-st_tbl$平均亩产), , drop = FALSE]
+      rownames(st_tbl) <- NULL
+    }
+    result$stability_table <- st_tbl
     # 稳定/不稳定表：拆分组合标签为 stageid + name
     result$stable_genotypes <- sd_data %>%
       dplyr::filter(Category == "高产稳定") %>%

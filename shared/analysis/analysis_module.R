@@ -73,6 +73,25 @@ analysis_load_trial <- function(experiment_id, module_type = "yield_test",
          "（可选：", paste(names(ANALYSIS_TRIAL_TYPES), collapse = " / "), "）")
   }
 
+  # ---- other_trials 库（外部导入试验）----
+  # 外部试验的 experiment_id 形如 OT_20260614153639_8880，
+  # 存在 data/other_trials.sqlite 里、表结构完全不同 ⇒ 走独立的翻译层。
+  # 翻译后列结构与 yield_test_field_records 兼容，下游管线无感知。
+  if (grepl("^OT_", experiment_id)) {
+    if (!exists("translateOtherTrial", mode = "function")) {
+      ot_path <- file.path(dirname(db_path), "other_trials_loader.R")
+      # loader 在 shared/ 下，不在 data/ 下 —— 按项目根找
+      cand <- c("shared/other_trials_loader.R", "../shared/other_trials_loader.R")
+      for (p in cand) if (file.exists(p)) { source(p); break }
+    }
+    ot_db <- file.path(dirname(db_path), "other_trials.sqlite")
+    df <- translateOtherTrial(experiment_id, db_path = ot_db)
+    if (is.null(df) || nrow(df) == 0) {
+      stop("外部试验 ", experiment_id, " 没有数据")
+    }
+    return(df)
+  }
+
   reader <- switch(module_type,
     yield_test     = getYieldTestFieldRecord,
     population     = getPopulationFieldRecord,
