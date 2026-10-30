@@ -346,6 +346,23 @@ rpt_related_section <- function(meta, facts) {
          "\n\n> 本报告数据由 book_plot 田间记录本导出（`yield_test_field_records`）；§七 全部数字由 book_plot 自带分析管线 `run_analysis()` 产出，与应用内「分析」标签页、命令行 `scripts/analyze_trial.R` 同源同口径，可直接复算。")
 }
 
+#' 把块所在小节号归一成单值字符串
+#'
+#' YAML 里 `section:` 有三种「不写」的方式：整个键缺失（NULL）、写空值（NULL）、
+#' 写 NA（字符串 "NA"）。三种都会让 `as.character(x)[1]` 变成 NA 或长度 0，
+#' 直接拿去做 startsWith() 会抛错 —— 整份报告生成不出来。
+#' （实测 yaml::read_yaml：缺键与空值都得 NULL，`section: NA` 得字符串 "NA"。）
+#'
+#' @param section 块所在小节号
+#' @return 单值字符串（空串 = 没有小节号）
+#' @noRd
+rpt_norm_section <- function(section) {
+  if (is.null(section)) return("")
+  s <- trimws(as.character(section)[1])
+  if (length(s) != 1L || is.na(s)) return("")
+  s
+}
+
 #' 由块所在小节号推导表/图编号前缀（"7.1" → "7"）
 #'
 #' 表图编号跟着正文小节走：§七 的表是「表 7-x」、图是「图 7-x」，
@@ -353,15 +370,15 @@ rpt_related_section <- function(meta, facts) {
 #' 表号跟小节号脱节 —— 表在第几节，编号就该是第几节。
 #'
 #' @param section 块所在小节号，如 "7.1" / "A.4"
-#' @param default 推不出来时的兜底前缀（模板的 stage_no）
+#' @param default 推不出来时的兜底前缀（**报告正文前缀**，不是试验阶段号）
 #' @return 字符型前缀
 #' @noRd
 rpt_section_stage <- function(section, default = "7") {
-  s <- trimws(as.character(section)[1])
-  if (is.na(s) || !nzchar(s)) return(as.character(default))
+  s <- rpt_norm_section(section)
+  if (!nzchar(s)) return(as.character(default)[1])
   m <- regmatches(s, regexpr("^[0-9]+", s))
   if (length(m) == 1L && nzchar(m)) return(m)
-  as.character(default)
+  as.character(default)[1]
 }
 
 # ==============================================================================
@@ -485,8 +502,39 @@ report_assemble <- function(result, preflight, meta,
   }
 
   # ---- ② 编号（只给渲染成功的块；表、图各自独立计数；附录用 appendix_prefix）
-  apx <- tpl$appendix_prefix
-  nt <- 0L; nf <- 0L; na <- 0L
+  # ⚠️ 编号前缀 = 块所在小节号（§七 ⇒ 7），不是试验阶段号（初级产比 4 / 多点 5）。
+  #    兜底**也不能**用 stage_no —— 那会把前缀又拉回「试验阶段」，
+  #    出现「表 7-3」与「表 9-1」混排（自检会判正文前缀不唯一而 FAIL）。
+  apx_raw <- tpl$appendix_prefix
+  apx <- if (is.null(apx_raw)) "" else trimws(as.character(apx_raw)[1])
+  if (is.na(apx) || !nzchar(apx)) apx <- "A"
+
+  # 正文前缀：模板里所有数字小节号中最常见的一个（primary / multi_site 都是 7）。
+  # 块自己没写 section（或写了非数字小节）时用它 ⇒ 全篇前缀一致。
+  sec_norm <- vapply(blocks, function(b) rpt_norm_section(b$section), character(1))
+  body_pref <- character(0)
+  for (s in sec_norm) {
+    m <- regmatches(s, regexpr("^[0-9]+", s))
+    if (length(m) == 1L && nzchar(m)) body_pref <- c(body_pref, m)
+  }
+  body_pref <- setdiff(unique(body_pref), apx)
+  body_prefix <- if (length(body_pref)) {
+    tb <- table(body_pref)
+    names(sort(tb, decreasing = TRUE))[1]
+  } else {
+    # 模板里一个数字小节号都没有 ⇒ 只能退回试验阶段号（最后的兜底）
+    fb <- as.character(stage_no)[1]
+    if (is.na(fb) || !nzchar(fb)) "7" else fb
+  }
+  # 计数按「种类 × 前缀」分组：附录表与附录图各走各的序号。
+  # ⚠️ 共用一个计数器的话，附录加一张图就会把后面的表号顶掉一位 ⇒ 自检报缺号。
+  ctr <- list()
+  ctr_next <- function(key) {
+    n <- if (!is.null(ctr[[key]])) ctr[[key]] else 0L
+    n <- n + 1L
+    ctr[[key]] <<- n
+    n
+  }
   registry <- list()
   blocks_md <- list()
   for (b in blocks) {
@@ -497,17 +545,11 @@ report_assemble <- function(result, preflight, meta,
       blocks_md[[b$id]] <- ""
       next
     }
-    is_apx <- startsWith(as.character(b$section), apx)
-    stage <- if (is_apx) apx else rpt_section_stage(b$section, stage_no)
-    if (b$kind == "table") {
-      if (is_apx) { na <- na + 1L; num <- na }
-      else { nt <- nt + 1L; num <- nt }
-      label <- sprintf("表 %s-%d", stage, num)
-    } else {
-      if (is_apx) { na <- na + 1L; num <- na }
-      else { nf <- nf + 1L; num <- nf }
-      label <- sprintf("图 %s-%d", stage, num)
-    }
+    sec <- rpt_norm_section(b$section)
+    is_apx <- nzchar(apx) && (sec == apx || startsWith(sec, paste0(apx, ".")))
+    stage <- if (is_apx) apx else rpt_section_stage(sec, body_prefix)
+    num <- ctr_next(paste0(b$kind, "|", stage))
+    label <- sprintf("%s %s-%d", if (b$kind == "table") "表" else "图", stage, num)
     reg <- list(id = b$id, kind = b$kind, number = num,
                 stage = stage, label = label, section = b$section)
     registry[[b$id]] <- reg
@@ -527,6 +569,25 @@ report_assemble <- function(result, preflight, meta,
     else
       md <- paste0(built$body, "\n\n", reg$label, " ", title, "\n\n注：", note_txt)
     blocks_md[[b$id]] <- md
+  }
+
+  # ---- ②b. 诊断：模板块顺序 vs 正文占位符顺序 ----------------------------
+  # 编号按 YAML 块顺序分配，但表/图在正文里出现的先后由 {{tbl_*}}/{{fig_*}}
+  # 占位符的位置决定。两者不一致 ⇒ 正文里编号乱序（自检会报「不升序」），
+  # 这里提前点名，免得排查时只看到「编号不升序」却不知道为什么。
+  ph_order <- character(0)
+  for (s in secs) {
+    m <- regmatches(s$text, gregexpr("\\{\\{[A-Za-z0-9_]+\\}\\}", s$text, perl = TRUE))[[1]]
+    if (length(m)) ph_order <- c(ph_order, sub("^\\{\\{", "", sub("\\}\\}$", "", m)))
+  }
+  yaml_order <- vapply(blocks, function(b) as.character(b$id)[1], character(1))
+  cmp_yaml <- yaml_order[yaml_order %in% ph_order]
+  cmp_ph <- ph_order[ph_order %in% yaml_order]
+  if (length(cmp_yaml) && !identical(cmp_yaml, cmp_ph)) {
+    warning(sprintf(
+      paste0("表图顺序不一致：模板块顺序与正文占位符顺序不符，正文会出现乱序编号。\n",
+             "  模板 YAML：%s\n  正文占位符：%s"),
+      paste(cmp_yaml, collapse = "、"), paste(cmp_ph, collapse = "、")))
   }
 
   # ---- ③ 交叉引用标签 -----------------------------------------------------

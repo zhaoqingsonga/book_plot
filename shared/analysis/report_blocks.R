@@ -29,14 +29,36 @@ if (!exists("ms_threshold_scan", mode = "function")) {
 
 # ---- 小工具 ---------------------------------------------------------------
 
+#' 清洗 Markdown 表格单元格
+#'
+#' 两个坑：
+#' ① 单元格里的 ASCII 竖线会被 Markdown 当成列分隔符 ⇒ 该行多出一列、整表错位；
+#' ② 单元格里的换行会把一行 Markdown 拆成两行 ⇒ 表结构直接坏掉。
+#'
+#' 转义与换行处理放在**渲染层**（rpt_md_table），不要在某个字段的取值函数里
+#' 单独做 —— 否则同一字段在正文表与附录表里表现不一致（口径打架）。
+#'
+#' @param x 单元格值
+#' @return 单值字符串
+#' @noRd
+rpt_md_cell <- function(x) {
+  s <- as.character(x)
+  if (length(s) == 1L && is.na(s)) return("")
+  s[is.na(s)] <- ""
+  s <- gsub("\r\n|\r|\n", "<br>", s)
+  gsub("|", "\\|", s, fixed = TRUE)
+}
+
 #' 把 data.frame 渲染成 Markdown 表格
 rpt_md_table <- function(df) {
   if (is.null(df) || nrow(df) == 0L) return("_（本次试验无对应数据）_")
   df <- as.data.frame(df, stringsAsFactors = FALSE)
-  hdr <- paste0("| ", paste(names(df), collapse = " | "), " |")
+  hdr <- paste0("| ", paste(rpt_md_cell(names(df)), collapse = " | "), " |")
   sep <- paste0("|", paste(rep("---", ncol(df)), collapse = "|"), "|")
   body <- vapply(seq_len(nrow(df)), function(i) {
-    paste0("| ", paste(unlist(df[i, ], use.names = FALSE), collapse = " | "), " |")
+    cells <- character(ncol(df))
+    for (j in seq_len(ncol(df))) cells[j] <- rpt_md_cell(df[i, j][[1]])
+    paste0("| ", paste(cells, collapse = " | "), " |")
   }, character(1))
   paste(c(hdr, sep, body), collapse = "\n")
 }
@@ -517,6 +539,11 @@ rpt_promoted_table <- function(pr, with_sep, eval_map = NULL) {
 #' A.4 的「材料田间评价表」只列**有评价文字**的小区（drop_empty = TRUE），
 #' 所以这里拿到的映射天然只覆盖有田间记录的材料；查不到就写「—」。
 #'
+#' ⚠️ 同一材料可能有**多条**评价（多点鉴定：每个地点各一行）。
+#'    直接用 setNames 造映射，R 取值只会命中**第一条** ⇒ 几个地点的行全显示
+#'    第一个地点的评价，其余记录被静默丢掉（读者会当成多条独立结论）。
+#'    ⇒ 这里按材料聚合，各条评价去重后并列。
+#'
 #' @param facts 事实卡（含 a4_bundle）
 #' @return named character（名字 = stageid），拿不到返回 NULL
 #' @noRd
@@ -525,12 +552,18 @@ rpt_eval_map <- function(facts) {
   if (is.null(ev) || !is.data.frame(ev)) return(NULL)
   if (!all(c("stageid", "田间评价") %in% names(ev))) return(NULL)
   ids <- trimws(as.character(ev$stageid))
-  setNames(as.character(ev[["田间评价"]]), ids)
+  txt <- trimws(as.character(ev[["田间评价"]]))
+  keep <- !is.na(ids) & nzchar(ids) & !is.na(txt) & nzchar(txt)
+  ids <- ids[keep]; txt <- txt[keep]
+  if (!length(ids)) return(NULL)
+  agg <- tapply(txt, ids, function(z) paste(unique(z), collapse = "；"))
+  setNames(as.character(agg), names(agg))
 }
 
 #' 按 ID 取田间评价文字；查不到写「—」
 #'
-#' 单元格里的 ASCII 竖线会破坏 Markdown 表格，统一转义。
+#' ⚠️ 竖线 / 换行的转义统一放在 rpt_md_table（渲染层），这里**不要**再转义 ——
+#'    重复转义会写成「\\|」，Markdown 里反而多出一个反斜杠。
 #'
 #' @param ids 小区/材料 ID
 #' @param eval_map rpt_eval_map() 的结果
@@ -539,10 +572,12 @@ rpt_eval_map <- function(facts) {
 rpt_lookup_field_notes <- function(ids, eval_map) {
   ids <- trimws(as.character(ids))
   ids[is.na(ids)] <- ""
-  out <- if (is.null(eval_map)) rep("", length(ids)) else unname(eval_map[ids])
+  out <- if (is.null(eval_map) || !length(eval_map)) rep("", length(ids)) else
+    unname(eval_map[ids])
   out[is.na(out)] <- ""
-  out <- gsub("|", "\\|", out, fixed = TRUE)
-  ifelse(nzchar(trimws(out)), out, "—")
+  out <- as.character(out)
+  out[!nzchar(trimws(out))] <- "—"
+  out
 }
 
 rpt_blk_tbl_promoted_no_sep <- function(result, ctx, meta, facts) {
@@ -794,7 +829,11 @@ rpt_field_notes_bundle <- function(result, meta) {
     #    A.4 三个表全部留白。这里改成：无 md 时只用数据表自带的评价字段。
     if (is.null(md_path) || !file.exists(md_path)) {
       db <- extract_db_notes(ed)
-      notes <- db
+      # ⚠️ 必须走 merge_field_notes 归一成「一行一个 ID 的评价串」。
+      #    直接把 db（列是 id/source_tag/text/kind）喂给 build_field_eval_table
+      #    会因缺 notes 列而 stop() ⇒ 外层 tryCatch 吞掉 ⇒ A.4 整段留白。
+      #    外部导入试验（other_trials）没有巡田时间线 md，走的就是这条分支。
+      notes <- merge_field_notes(NULL, db)
       cov <- tryCatch(summarize_field_note_coverage(NULL, db, n_total = nrow(ed)),
                       error = function(e) NULL)
       ev <- build_field_eval_table(ed, notes, ck_variety = meta$design$ck_variety)

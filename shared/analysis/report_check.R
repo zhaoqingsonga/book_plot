@@ -670,7 +670,49 @@ rc_hit_context <- function(pattern, txt, line_starts, lines, k = 3L) {
 # 主检查入口
 # ------------------------------------------------------------------------------
 
-#' 对一份成品试验报告跑完整交付自检
+#' 每张 Markdown 表格的每行列数一致
+#'
+#' 这是「单元格里的竖线 / 换行把表结构搞坏」的兜底检查：
+#' 单元格出现未转义的 ASCII 竖线 ⇒ 该行比表头多一列；单元格出现换行 ⇒
+#' 一行被拆成两行。两种情况都会让读者看到错位的表。
+#' 分隔行（|---|---|）本身只有一格，比较时要排除。
+#'
+#' @param lines 报告逐行
+#' @return 自检项列表
+#' @noRd
+rc_check_table_columns <- function(lines) {
+  res <- list()
+  bad <- character(0)
+  n_tbl <- 0L
+  n <- length(lines)
+  i <- 1L
+  while (i <= n) {
+    if (!grepl("^[|]", trimws(lines[i]))) { i <- i + 1L; next }
+    j <- i
+    while (j <= n && grepl("^[|]", trimws(lines[j]))) j <- j + 1L
+    rows <- trimws(lines[i:(j - 1L)])
+    start_line <- i
+    i <- j
+    n_tbl <- n_tbl + 1L
+    # 分隔行：整行只有 | - : 空格
+    is_sep <- grepl("^[|][| :_-]*[|]$", rows) & grepl("-", rows, fixed = TRUE)
+    cnt <- vapply(rows[!is_sep], function(l) {
+      s <- sub("^[|]", "", l)
+      s <- sub("[|]$", "", s)
+      length(strsplit(s, "(?<!\\\\)[|]", perl = TRUE)[[1]])
+    }, integer(1))
+    if (length(cnt) && any(cnt != cnt[1])) {
+      d <- cnt[cnt != cnt[1]][1]
+      bad <- c(bad, sprintf("第 %d 行起的表格列数不一致（表头 %d 列，数据行 %d 列）",
+                            start_line, cnt[1], d))
+    }
+  }
+  res <- rc_push(res, sprintf("%d 张表每行列数一致", n_tbl - length(bad)),
+                 length(bad) == 0L,
+                 if (length(bad) == 0L) "" else paste(bad, collapse = "；"))
+  res
+}
+
 #'
 #' @param path 报告 markdown 路径
 #' @param strict TRUE 时警告项也计入失败
@@ -727,6 +769,9 @@ rc_check_report <- function(path, strict = FALSE, vault_roots = NULL) {
 
   # ---------- 3c. 两张晋级材料表带「田间评价」列 ----------
   res <- c(res, rc_check_promoted_field_eval(lines))
+
+  # ---------- 3d. 每张 Markdown 表每行列数一致（竖线/换行转义失效的兜底） ----------
+  res <- c(res, rc_check_table_columns(lines))
 
   # ---------- 4. 每张图 / 表后有紧邻的「注：」 ----------
   tab_missing <- character(0)

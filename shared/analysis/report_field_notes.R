@@ -822,8 +822,18 @@ build_field_eval_table <- function(export_data, field_notes, ck_variety = "中�
     out
   }
   # ---- 田间评价 ----
-  notes_map <- stats::setNames(as.character(field_notes$notes),
-                               trimws(as.character(field_notes$id)))
+  # ⚠️ 同一 stageid 可能有多条评价（多点试验：同一材料每个地点各一条）。
+  #    用命名向量取值只会拿到**第一条** ⇒ 别的地点的评价被静默丢掉。
+  #    这里按 ID 聚合（去重后并列），保证一条评价都不丢、也不串号。
+  nid <- trimws(as.character(field_notes$id))
+  ntx <- as.character(field_notes$notes)
+  nkeep <- !is.na(nid) & nzchar(nid) & !is.na(ntx) & nzchar(trimws(ntx))
+  if (any(nkeep)) {
+    agg <- tapply(ntx[nkeep], nid[nkeep], function(z) paste(unique(z), collapse = " "))
+    notes_map <- stats::setNames(as.character(agg), names(agg))
+  } else {
+    notes_map <- stats::setNames(character(0), character(0))
+  }
   notes <- unname(notes_map[stageid])
   notes[is.na(notes)] <- ""
   res <- data.frame(
