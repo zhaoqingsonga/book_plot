@@ -13,5 +13,9 @@ design:
   n_reps: 1
   blocks: 24
   arrangement: 间比法顺序排列（每20行设1对照，末位补加对照）
-  plot_area_m2: 9.6
+  # 2026-10-31 修正：小区 4 行区，但收获时只收中间 2 行测产，
+  # 净收获面积 = 4.8 m²（原填 9.6 为整区面积，导致全部亩产折算值偏低一半）
+  plot_area_m2: 4.8
+  plot_rows_total: 4
+  plot_rows_harvested: 2
 sop_confirmed: false
